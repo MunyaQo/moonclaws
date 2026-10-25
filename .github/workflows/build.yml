@@ -17,5 +17,5 @@ jobs:
       - run: gradle build --no-daemon
       - uses: actions/upload-artifact@v4
         with:
-          name: avatarlink-mod
+          name: moonclaws-mod
           path: build/libs/*.jar
