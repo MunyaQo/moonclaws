@@ -1,0 +1,9 @@
+{
+  "type": "minecraft:crafting_shapeless",
+  "ingredients": [
+    { "item": "minecraft:quartz" },
+    { "item": "minecraft:cod" },
+    { "item": "minecraft:lapis_lazuli" }
+  ],
+  "result": { "item": "moonclaws:moon_stone" }
+}

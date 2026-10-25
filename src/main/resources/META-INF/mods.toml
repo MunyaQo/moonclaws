@@ -1,0 +1,25 @@
+modLoader="javafml"
+loaderVersion="[36,)"
+license="All rights reserved"
+
+[[mods]]
+modId="moonclaws"
+version="0.1.0"
+displayName="Moonclaws"
+description='''
+Turn into a cat with the Moon Stone. Choose a clan, get a random cat skin and cat abilities.
+'''
+
+[[dependencies.moonclaws]]
+    modId="forge"
+    mandatory=true
+    versionRange="[36,)"
+    ordering="NONE"
+    side="BOTH"
+
+[[dependencies.moonclaws]]
+    modId="minecraft"
+    mandatory=true
+    versionRange="[1.16.5]"
+    ordering="NONE"
+    side="BOTH"
