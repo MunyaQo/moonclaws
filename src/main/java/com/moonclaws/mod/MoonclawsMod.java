@@ -1,8 +1,12 @@
 package com.moonclaws.mod;
 
 import com.moonclaws.mod.client.ClientEvents;
+import net.minecraft.entity.EntitySpawnPlacementRegistry;
+import net.minecraft.entity.EntityType;
+import net.minecraft.entity.passive.AnimalEntity;
 import net.minecraft.item.Item;
 import net.minecraft.item.ItemGroup;
+import net.minecraft.world.gen.Heightmap;
 import net.minecraftforge.api.distmarker.Dist;
 import net.minecraftforge.common.MinecraftForge;
 import net.minecraftforge.eventbus.api.IEventBus;
@@ -34,5 +38,15 @@ public class MoonclawsMod {
 
     private void commonSetup(FMLCommonSetupEvent event) {
         event.enqueueWork(ModNetwork::register);
+        event.enqueueWork(() -> {
+            // cats should spawn on grass like other animals (if the game already has a rule, keep it)
+            try {
+                EntitySpawnPlacementRegistry.register(EntityType.CAT,
+                        EntitySpawnPlacementRegistry.PlacementType.ON_GROUND,
+                        Heightmap.Type.MOTION_BLOCKING_NO_LEAVES,
+                        AnimalEntity::checkAnimalSpawnRules);
+            } catch (IllegalStateException ignored) {
+            }
+        });
     }
 }

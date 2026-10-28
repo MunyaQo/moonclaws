@@ -112,6 +112,11 @@ public final class CatState {
         boolean cat = isCat(sp);
         int clan = getClan(sp);
 
+        // cleanup: the first version muted the player, it is not used anymore
+        if (sp.isSilent()) {
+            sp.setSilent(false);
+        }
+
         // claws: a bit more damage, much faster attacks
         setModifier(sp, Attributes.ATTACK_DAMAGE, DAMAGE_ID, "Moonclaws claws",
                 clan == CLAN_THUNDER ? 2.0D : 1.0D, AttributeModifier.Operation.ADDITION, cat);
@@ -132,10 +137,6 @@ public final class CatState {
         }
         if (clan == CLAN_SHADOW && sp.level.getMaxLocalRawBrightness(sp.blockPosition()) <= 7) {
             refreshEffect(sp, Effects.MOVEMENT_SPEED, 0, 40, 20);
-        }
-        // silent steps (side effect: all sounds made by the player are muted)
-        if (!sp.isSilent()) {
-            sp.setSilent(true);
         }
     }
 
