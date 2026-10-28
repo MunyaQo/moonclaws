@@ -6,6 +6,7 @@ import java.util.HashMap;
 import java.util.Map;
 import java.util.UUID;
 import net.minecraft.client.Minecraft;
+import net.minecraft.client.audio.ISound;
 import net.minecraft.client.gui.AbstractGui;
 import net.minecraft.client.renderer.entity.EntityRenderer;
 import net.minecraft.entity.EntityType;
@@ -17,6 +18,7 @@ import net.minecraftforge.client.event.RenderGameOverlayEvent;
 import net.minecraftforge.client.event.RenderHandEvent;
 import net.minecraftforge.client.event.RenderNameplateEvent;
 import net.minecraftforge.client.event.RenderPlayerEvent;
+import net.minecraftforge.client.event.sound.PlaySoundEvent;
 import net.minecraftforge.eventbus.api.Event;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
 
@@ -103,6 +105,26 @@ public class ClientEvents {
         int x = event.getWindow().getGuiScaledWidth() / 2 - 88 + selected * 20;
         int y = event.getWindow().getGuiScaledHeight() - 19;
         AbstractGui.fill(event.getMatrixStack(), x, y, x + 16, y + 16, 0x6655AAFF);
+    }
+
+    /** Silent steps: mute step and landing sounds that come from a cat-player (any player on this client). */
+    @SubscribeEvent
+    public void onPlaySound(PlaySoundEvent event) {
+        ISound sound = event.getSound();
+        Minecraft mc = Minecraft.getInstance();
+        if (sound == null || mc.level == null) {
+            return;
+        }
+        String path = sound.getLocation().getPath();
+        if (!(path.endsWith(".step") || path.endsWith(".fall") || path.endsWith("_fall"))) {
+            return;
+        }
+        for (PlayerEntity player : mc.level.players()) {
+            if (CatState.isCat(player) && player.distanceToSqr(sound.getX(), sound.getY(), sound.getZ()) < 2.25D) {
+                event.setResultSound(null);
+                return;
+            }
+        }
     }
 
     @SubscribeEvent
