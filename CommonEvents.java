@@ -2,7 +2,6 @@ package com.moonclaws.mod;
 
 import java.util.ArrayList;
 import java.util.List;
-import net.minecraft.command.Commands;
 import net.minecraft.entity.Entity;
 import net.minecraft.entity.EntityClassification;
 import net.minecraft.entity.EntitySize;
@@ -12,13 +11,10 @@ import net.minecraft.entity.player.PlayerEntity;
 import net.minecraft.entity.player.ServerPlayerEntity;
 import net.minecraft.nbt.CompoundNBT;
 import net.minecraft.util.math.AxisAlignedBB;
-import net.minecraft.util.text.StringTextComponent;
 import net.minecraft.world.biome.Biome;
 import net.minecraft.world.biome.MobSpawnInfo;
-import net.minecraftforge.event.RegisterCommandsEvent;
 import net.minecraftforge.event.TickEvent;
 import net.minecraftforge.event.entity.EntityEvent;
-import net.minecraftforge.event.entity.living.LivingEntityUseItemEvent;
 import net.minecraftforge.event.entity.living.LivingFallEvent;
 import net.minecraftforge.event.entity.player.PlayerEvent;
 import net.minecraftforge.event.world.BiomeLoadingEvent;
@@ -118,34 +114,6 @@ public class CommonEvents {
         // cats: weight a bit lower than the old wolves had, groups of 1-3
         int catWeight = event.getCategory() == Biome.Category.TAIGA ? 6 : 4;
         creatures.add(new MobSpawnInfo.Spawners(EntityType.CAT, catWeight, 1, 3));
-    }
-
-    /** Food gives weak short effects, but only in cat form. */
-    @SubscribeEvent
-    public void onFoodEaten(LivingEntityUseItemEvent.Finish event) {
-        if (!(event.getEntityLiving() instanceof ServerPlayerEntity)) {
-            return;
-        }
-        ServerPlayerEntity player = (ServerPlayerEntity) event.getEntityLiving();
-        if (CatState.isCat(player)) {
-            FoodEffects.apply(player, event.getItem());
-        }
-    }
-
-    /** /moonclaws settlement : builds the demo cat settlement where you stand. */
-    @SubscribeEvent
-    public void onRegisterCommands(RegisterCommandsEvent event) {
-        event.getDispatcher().register(Commands.literal("moonclaws")
-                .requires(source -> source.hasPermission(2))
-                .then(Commands.literal("settlement").executes(ctx -> {
-                    ServerPlayerEntity player = ctx.getSource().getPlayerOrException();
-                    net.minecraft.util.math.BlockPos ground = player.blockPosition().below();
-                    SettlementBuilder.build(player.getLevel(), ground);
-                    // move the player to the entrance (south side), outside the pit
-                    player.teleportTo(ground.getX() + 0.5D, ground.getY() + 1.0D, ground.getZ() + 15.5D);
-                    ctx.getSource().sendSuccess(new StringTextComponent("Moonclaws: settlement built. You are at the entrance (south side)."), true);
-                    return 1;
-                })));
     }
 
     /** Cats land on their paws. */
