@@ -2,28 +2,43 @@ package com.moonclaws.mod;
 
 import java.util.ArrayList;
 import java.util.List;
+import net.minecraft.block.BlockState;
+import net.minecraft.block.CampfireBlock;
 import net.minecraft.command.Commands;
 import net.minecraft.entity.Entity;
 import net.minecraft.entity.EntityClassification;
 import net.minecraft.entity.EntitySize;
 import net.minecraft.entity.EntityType;
+import net.minecraft.entity.SpawnReason;
 import net.minecraft.entity.Pose;
 import net.minecraft.entity.player.PlayerEntity;
 import net.minecraft.entity.player.ServerPlayerEntity;
+import net.minecraft.item.ItemStack;
 import net.minecraft.nbt.CompoundNBT;
+import net.minecraft.tileentity.CampfireTileEntity;
+import net.minecraft.tileentity.TileEntity;
+import net.minecraft.util.ActionResultType;
+import net.minecraft.util.Hand;
+import net.minecraft.util.NonNullList;
 import net.minecraft.util.math.AxisAlignedBB;
 import net.minecraft.util.text.StringTextComponent;
 import net.minecraft.world.biome.Biome;
 import net.minecraft.world.biome.MobSpawnInfo;
+import net.minecraft.world.server.ServerWorld;
 import net.minecraftforge.event.RegisterCommandsEvent;
 import net.minecraftforge.event.TickEvent;
 import net.minecraftforge.event.entity.EntityEvent;
 import net.minecraftforge.event.entity.living.LivingEntityUseItemEvent;
 import net.minecraftforge.event.entity.living.LivingFallEvent;
+import net.minecraftforge.event.entity.living.LivingSpawnEvent;
 import net.minecraftforge.event.entity.player.PlayerEvent;
+import net.minecraftforge.event.entity.player.PlayerInteractEvent;
 import net.minecraftforge.event.world.BiomeLoadingEvent;
+import net.minecraftforge.eventbus.api.Event;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
+import net.minecraftforge.fml.ModList;
 import net.minecraftforge.fml.LogicalSide;
+import net.minecraftforge.fml.network.PacketDistributor;
 
 /** Events that run on both sides / on the server. */
 public class CommonEvents {
@@ -132,20 +147,91 @@ public class CommonEvents {
         }
     }
 
-    /** /moonclaws settlement : builds the demo cat settlement where you stand. */
+    /** /moonclaws version (everyone) and /moonclaws settlement (cheats): the demo cat settlement. */
     @SubscribeEvent
     public void onRegisterCommands(RegisterCommandsEvent event) {
         event.getDispatcher().register(Commands.literal("moonclaws")
-                .requires(source -> source.hasPermission(2))
-                .then(Commands.literal("settlement").executes(ctx -> {
+                .then(Commands.literal("version").executes(ctx -> {
+                    String version = ModList.get().getModContainerById(MoonclawsMod.MODID)
+                            .map(c -> c.getModInfo().getVersion().toString()).orElse("?");
+                    ctx.getSource().sendSuccess(new StringTextComponent("Moonclaws " + version), false);
+                    return 1;
+                }))
+                .then(Commands.literal("settlement").requires(source -> source.hasPermission(2)).executes(ctx -> {
                     ServerPlayerEntity player = ctx.getSource().getPlayerOrException();
                     net.minecraft.util.math.BlockPos ground = player.blockPosition().below();
                     SettlementBuilder.build(player.getLevel(), ground);
-                    // move the player to the entrance (south side), outside the pit
-                    player.teleportTo(ground.getX() + 0.5D, ground.getY() + 1.0D, ground.getZ() + 15.5D);
+                    SettlementData.get(player.getLevel()).add(ground);
+                    // move the player to the entrance path (south side)
+                    player.teleportTo(ground.getX() + 0.5D, ground.getY() + 1.0D, ground.getZ() + 12.5D);
                     ctx.getSource().sendSuccess(new StringTextComponent("Moonclaws: settlement built. You are at the entrance (south side)."), true);
                     return 1;
                 })));
+    }
+
+    /** No natural spawns of hostile mobs around settlements (48 blocks). */
+    @SubscribeEvent
+    public void onCheckSpawn(LivingSpawnEvent.CheckSpawn event) {
+        if (!(event.getWorld() instanceof ServerWorld)) {
+            return;
+        }
+        if (event.getEntityLiving().getType().getCategory() != EntityClassification.MONSTER) {
+            return;
+        }
+        SpawnReason reason = event.getSpawnReason();
+        if (reason != SpawnReason.NATURAL && reason != SpawnReason.CHUNK_GENERATION) {
+            return;
+        }
+        if (SettlementData.get((ServerWorld) event.getWorld()).isNear(event.getX(), event.getZ(), 48.0D)) {
+            event.setResult(Event.Result.DENY);
+        }
+    }
+
+    /** Unlit campfire = food storage: right click with an empty hand takes the last item back. */
+    @SubscribeEvent
+    public void onRightClickBlock(PlayerInteractEvent.RightClickBlock event) {
+        if (event.getWorld().isClientSide || event.getHand() != Hand.MAIN_HAND || !event.getItemStack().isEmpty()) {
+            return;
+        }
+        BlockState state = event.getWorld().getBlockState(event.getPos());
+        if (!(state.getBlock() instanceof CampfireBlock) || state.getValue(CampfireBlock.LIT)) {
+            return;
+        }
+        TileEntity tile = event.getWorld().getBlockEntity(event.getPos());
+        if (!(tile instanceof CampfireTileEntity)) {
+            return;
+        }
+        CampfireTileEntity fire = (CampfireTileEntity) tile;
+        NonNullList<ItemStack> items = fire.getItems();
+        for (int i = items.size() - 1; i >= 0; i--) {
+            ItemStack stack = items.get(i);
+            if (!stack.isEmpty()) {
+                ItemStack out = stack.copy();
+                items.set(i, ItemStack.EMPTY);
+                fire.setChanged();
+                event.getWorld().sendBlockUpdated(event.getPos(), state, state, 3);
+                if (!event.getPlayer().inventory.add(out)) {
+                    event.getPlayer().drop(out, false);
+                }
+                event.setCanceled(true);
+                event.setCancellationResult(ActionResultType.SUCCESS);
+                return;
+            }
+        }
+    }
+
+    /** Right click on a stray cat with an empty hand opens the trade window. */
+    @SubscribeEvent
+    public void onInteractEntity(PlayerInteractEvent.EntityInteract event) {
+        if (event.getWorld().isClientSide || event.getHand() != Hand.MAIN_HAND || !event.getItemStack().isEmpty()) {
+            return;
+        }
+        if (event.getTarget() instanceof StrayCatEntity && event.getPlayer() instanceof ServerPlayerEntity) {
+            ServerPlayerEntity sp = (ServerPlayerEntity) event.getPlayer();
+            ModNetwork.CHANNEL.send(PacketDistributor.PLAYER.with(() -> sp), new ModNetwork.OpenTradePacket());
+            event.setCanceled(true);
+            event.setCancellationResult(ActionResultType.SUCCESS);
+        }
     }
 
     /** Cats land on their paws. */
@@ -171,8 +257,9 @@ public class CommonEvents {
             event.setNewSize(EntitySize.scalable(0.6F, 0.7F));
             event.setNewEyeHeight(0.55F);
         } else if (pose == Pose.CROUCHING) {
-            event.setNewSize(EntitySize.scalable(0.6F, 0.6F));
-            event.setNewEyeHeight(0.5F);
+            // sneaking cat: low enough for half-block gaps
+            event.setNewSize(EntitySize.scalable(0.6F, 0.5F));
+            event.setNewEyeHeight(0.4F);
         } else if (pose == Pose.SWIMMING) {
             // low crawling pose: fits under half-block gaps
             event.setNewSize(EntitySize.scalable(0.6F, 0.5F));

@@ -1,9 +1,12 @@
 package com.moonclaws.mod;
 
 import com.moonclaws.mod.client.ClientEvents;
+import com.moonclaws.mod.client.ClientSetup;
 import net.minecraft.entity.EntitySpawnPlacementRegistry;
 import net.minecraft.entity.EntityType;
+import net.minecraft.entity.ai.attributes.GlobalEntityTypeAttributes;
 import net.minecraft.entity.passive.AnimalEntity;
+import net.minecraft.entity.passive.CatEntity;
 import net.minecraft.item.Item;
 import net.minecraft.item.ItemGroup;
 import net.minecraft.world.gen.Heightmap;
@@ -27,17 +30,26 @@ public class MoonclawsMod {
     public static final RegistryObject<Item> MOON_STONE = ITEMS.register("moon_stone",
             () -> new MoonStoneItem(new Item.Properties().tab(ItemGroup.TAB_MISC).stacksTo(1)));
 
+    public static final RegistryObject<Item> STRAY_CAT_EGG = ITEMS.register("stray_cat_egg",
+            () -> new StrayCatEggItem(new Item.Properties().tab(ItemGroup.TAB_MISC)));
+
     public MoonclawsMod() {
         IEventBus modBus = FMLJavaModLoadingContext.get().getModEventBus();
         ITEMS.register(modBus);
+        ModEntities.ENTITIES.register(modBus);
         modBus.addListener(this::commonSetup);
 
         MinecraftForge.EVENT_BUS.register(new CommonEvents());
-        DistExecutor.unsafeRunWhenOn(Dist.CLIENT, () -> () -> MinecraftForge.EVENT_BUS.register(new ClientEvents()));
+        DistExecutor.unsafeRunWhenOn(Dist.CLIENT, () -> () -> {
+            MinecraftForge.EVENT_BUS.register(new ClientEvents());
+            ClientSetup.register(modBus);
+        });
     }
 
     private void commonSetup(FMLCommonSetupEvent event) {
         event.enqueueWork(ModNetwork::register);
+        event.enqueueWork(() ->
+                GlobalEntityTypeAttributes.put(ModEntities.STRAY_CAT.get(), CatEntity.createAttributes().build()));
         event.enqueueWork(() -> {
             // cats should spawn on grass like other animals (if the game already has a rule, keep it)
             try {

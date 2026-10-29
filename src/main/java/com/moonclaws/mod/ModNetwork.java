@@ -31,6 +31,10 @@ public final class ModNetwork {
                 ChooseClanPacket::encode, ChooseClanPacket::decode, ChooseClanPacket::handle);
         CHANNEL.registerMessage(id++, SyncCatPacket.class,
                 SyncCatPacket::encode, SyncCatPacket::decode, SyncCatPacket::handle);
+        CHANNEL.registerMessage(id++, OpenTradePacket.class,
+                OpenTradePacket::encode, OpenTradePacket::decode, OpenTradePacket::handle);
+        CHANNEL.registerMessage(id++, TradePacket.class,
+                TradePacket::encode, TradePacket::decode, TradePacket::handle);
     }
 
     // server -> client: open the clan selection screen
@@ -113,6 +117,54 @@ public final class ModNetwork {
             ctx.get().enqueueWork(() -> {
                 ClientCatData.put(msg.id, msg.cat, msg.skin, msg.clan);
                 DistExecutor.unsafeRunWhenOn(Dist.CLIENT, () -> () -> ClientHooks.onSync(msg.id));
+            });
+            ctx.get().setPacketHandled(true);
+        }
+    }
+
+    // server -> client: open the stray cat trade window
+    public static class OpenTradePacket {
+        public static void encode(OpenTradePacket msg, PacketBuffer buf) {
+        }
+
+        public static OpenTradePacket decode(PacketBuffer buf) {
+            return new OpenTradePacket();
+        }
+
+        public static void handle(OpenTradePacket msg, Supplier<NetworkEvent.Context> ctx) {
+            ctx.get().enqueueWork(() ->
+                    DistExecutor.unsafeRunWhenOn(Dist.CLIENT, () -> ClientHooks::openTradeScreen));
+            ctx.get().setPacketHandled(true);
+        }
+    }
+
+    // client -> server: the player pressed a trade button
+    public static class TradePacket {
+        public final int index;
+
+        public TradePacket(int index) {
+            this.index = index;
+        }
+
+        public static void encode(TradePacket msg, PacketBuffer buf) {
+            buf.writeInt(msg.index);
+        }
+
+        public static TradePacket decode(PacketBuffer buf) {
+            return new TradePacket(buf.readInt());
+        }
+
+        public static void handle(TradePacket msg, Supplier<NetworkEvent.Context> ctx) {
+            ServerPlayerEntity sender = ctx.get().getSender();
+            ctx.get().enqueueWork(() -> {
+                if (sender == null) {
+                    return;
+                }
+                // a stray cat must be close to the player
+                if (sender.level.getEntitiesOfClass(StrayCatEntity.class, sender.getBoundingBox().inflate(6.0D)).isEmpty()) {
+                    return;
+                }
+                StrayTrades.execute(sender, msg.index);
             });
             ctx.get().setPacketHandled(true);
         }

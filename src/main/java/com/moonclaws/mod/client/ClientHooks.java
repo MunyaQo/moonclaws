@@ -14,6 +14,10 @@ public final class ClientHooks {
         Minecraft.getInstance().setScreen(new ClanScreen());
     }
 
+    public static void openTradeScreen() {
+        Minecraft.getInstance().setScreen(new TradeScreen());
+    }
+
     /** New state of a player arrived: recalculate his hitbox size. */
     public static void onSync(UUID id) {
         Minecraft mc = Minecraft.getInstance();

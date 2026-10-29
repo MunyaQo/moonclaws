@@ -4,24 +4,33 @@ import java.util.Random;
 import net.minecraft.block.Block;
 import net.minecraft.block.BlockState;
 import net.minecraft.block.Blocks;
+import net.minecraft.block.CampfireBlock;
 import net.minecraft.block.LeavesBlock;
+import net.minecraft.block.RotatedPillarBlock;
+import net.minecraft.util.Direction;
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.world.server.ServerWorld;
 
 /**
- * Demo cat settlement: a round pit with six cave dens in its walls, a meeting stone in the middle,
- * a dining area and a leaf tunnel entrance. Everything is scaled for cats (1-block entrances).
+ * Demo cat settlement (version 0.2.0): a round forest hollow with terraces, a mossy rock pile for
+ * meetings, a dining area with an unlit campfire, log benches and hay, and six den caves with wooden
+ * frames dug into the slopes. Scaled for cats: den entrances are one block high.
  *
- * Layout (top view, N is up, entrance in the south):
- *   north wall: queens' den (red), herald's den (blue)
- *   west wall:  apprentices' den (light gray), nursery (pink)
- *   east wall:  healers' den (green), warriors' den (brown)
+ * Layout (north is up, the entrance path is in the south):
+ *   north side: queens' den (red), herald's den (blue)
+ *   west side:  apprentices' den (light gray), nursery (pink)
+ *   east side:  healers' den (green, herbs, half-block niche), warriors' den (brown)
  */
 public final class SettlementBuilder {
 
-    private static final double OUTER_R2 = 14.5D * 14.5D; // solid platform radius
-    private static final int OUTER = 14;
-    private static final int PIT_R2 = 8 * 8;              // pit radius 8 (about 17 blocks across)
+    private static final int PLATFORM = 13;
+    private static final double PLATFORM_R2 = 13.5D * 13.5D;
+
+    // terrace borders (squared radius): floor, 1st, 2nd, 3rd terrace, then the normal surface
+    private static final int FLOOR_R2 = 25;
+    private static final int T1_R2 = 40;
+    private static final int T2_R2 = 58;
+    private static final int T3_R2 = 81;
 
     private SettlementBuilder() {
     }
@@ -41,10 +50,28 @@ public final class SettlementBuilder {
         return Blocks.OAK_LEAVES.defaultBlockState().setValue(LeavesBlock.PERSISTENT, Boolean.TRUE);
     }
 
-    private static BlockState solid(int depth, Random rnd) {
-        if (depth == 0) {
-            return Blocks.GRASS_BLOCK.defaultBlockState();
+    private static BlockState log(Direction.Axis axis) {
+        return Blocks.OAK_LOG.defaultBlockState().setValue(RotatedPillarBlock.AXIS, axis);
+    }
+
+    /** 0 = pit floor, 1-3 = terraces, 4 = normal surface. */
+    private static int level(int r2) {
+        if (r2 <= FLOOR_R2) {
+            return 0;
         }
+        if (r2 <= T1_R2) {
+            return 1;
+        }
+        if (r2 <= T2_R2) {
+            return 2;
+        }
+        if (r2 <= T3_R2) {
+            return 3;
+        }
+        return 4;
+    }
+
+    private static BlockState solid(int depth, Random rnd) {
         if (depth >= -3) {
             int n = rnd.nextInt(12);
             if (n == 0) {
@@ -68,39 +95,63 @@ public final class SettlementBuilder {
         int g = ground.getY();
         Random rnd = new Random(ground.asLong());
 
-        // 1. solid platform and cleared sky
-        for (int dx = -OUTER; dx <= OUTER; dx++) {
-            for (int dz = -OUTER; dz <= OUTER; dz++) {
-                if (dx * dx + dz * dz > OUTER_R2) {
+        // 1. platform with terraces: solid below, grass on top, cleared sky above
+        for (int dx = -PLATFORM; dx <= PLATFORM; dx++) {
+            for (int dz = -PLATFORM; dz <= PLATFORM; dz++) {
+                int r2 = dx * dx + dz * dz;
+                if (r2 > PLATFORM_R2) {
                     continue;
                 }
-                for (int y = g - 8; y <= g; y++) {
+                int lvl = level(r2);
+                int top = g - 4 + lvl;
+                for (int y = g - 8; y < top; y++) {
                     set(world, cx + dx, y, cz + dz, solid(y - g, rnd));
                 }
-                for (int y = g + 1; y <= g + 6; y++) {
+                BlockState topBlock;
+                if (lvl == 0) {
+                    topBlock = floor(rnd);
+                } else if (dx == 0 && dz >= 5) {
+                    topBlock = Blocks.COARSE_DIRT.defaultBlockState(); // entrance path in the south
+                } else {
+                    topBlock = Blocks.GRASS_BLOCK.defaultBlockState();
+                }
+                set(world, cx + dx, top, cz + dz, topBlock);
+                for (int y = top + 1; y <= g + 6; y++) {
                     set(world, cx + dx, y, cz + dz, air());
                 }
             }
         }
 
-        // 2. the pit
-        for (int dx = -8; dx <= 8; dx++) {
-            for (int dz = -8; dz <= 8; dz++) {
-                if (dx * dx + dz * dz > PIT_R2) {
+        // 2. bushes and ferns on the terraces (not on the entrance path)
+        for (int dx = -PLATFORM; dx <= PLATFORM; dx++) {
+            for (int dz = -PLATFORM; dz <= PLATFORM; dz++) {
+                int r2 = dx * dx + dz * dz;
+                if (r2 <= FLOOR_R2 || r2 > T3_R2 + 20) {
                     continue;
                 }
-                for (int y = g - 3; y <= g; y++) {
-                    set(world, cx + dx, y, cz + dz, air());
+                if (Math.abs(dx) <= 1 && dz > 0) {
+                    continue;
                 }
-                set(world, cx + dx, g - 4, cz + dz, floor(rnd));
+                int top = g - 4 + level(r2);
+                int n = rnd.nextInt(10);
+                if (n == 0) {
+                    set(world, cx + dx, top + 1, cz + dz, leaves());
+                    if (rnd.nextInt(3) == 0) {
+                        set(world, cx + dx, top + 2, cz + dz, leaves());
+                    }
+                } else if (n == 1) {
+                    set(world, cx + dx, top + 1, cz + dz, Blocks.FERN.defaultBlockState());
+                } else if (n == 2) {
+                    set(world, cx + dx, top + 1, cz + dz, Blocks.GRASS.defaultBlockState());
+                }
             }
         }
 
-        // 3. thorn ring of leaves around the rim (gap for the entrance in the south)
-        for (int dx = -9; dx <= 9; dx++) {
-            for (int dz = -9; dz <= 9; dz++) {
-                int d2 = dx * dx + dz * dz;
-                if (d2 <= PIT_R2 || d2 > 81) {
+        // 3. thorn ring of leaves on the surface around the hollow (gap for the entrance path)
+        for (int dx = -11; dx <= 11; dx++) {
+            for (int dz = -11; dz <= 11; dz++) {
+                int r2 = dx * dx + dz * dz;
+                if (r2 <= T3_R2 || r2 > 110) {
                     continue;
                 }
                 if (Math.abs(dx) <= 1 && dz > 0) {
@@ -111,21 +162,29 @@ public final class SettlementBuilder {
             }
         }
 
-        // 4. meeting stone in the middle
-        for (int dx = -1; dx <= 1; dx++) {
-            for (int dz = -1; dz <= 1; dz++) {
-                set(world, cx + dx, g - 3, cz + dz, Blocks.ANDESITE.defaultBlockState());
+        // 4. meeting place: a mossy rock pile west of the center
+        for (int dx = -4; dx <= -2; dx++) {
+            for (int dz = -2; dz <= 1; dz++) {
+                double dist = Math.max(Math.abs(dx + 3.0D), Math.abs(dz + 0.5D));
+                int h = (int) Math.floor(3.9D - dist * 1.5D);
+                for (int i = 0; i < h; i++) {
+                    int n = rnd.nextInt(10);
+                    Block b = n < 6 ? Blocks.MOSSY_COBBLESTONE : (n < 9 ? Blocks.COBBLESTONE : Blocks.ANDESITE);
+                    set(world, cx + dx, g - 3 + i, cz + dz, b.defaultBlockState());
+                }
             }
         }
-        set(world, cx, g - 2, cz, Blocks.ANDESITE.defaultBlockState());
 
-        // 5. dining area (east of the center): bare earth and a pile of fresh-kill (hay)
-        for (int dx = 3; dx <= 5; dx++) {
-            for (int dz = -1; dz <= 1; dz++) {
-                set(world, cx + dx, g - 4, cz + dz, Blocks.COARSE_DIRT.defaultBlockState());
-            }
+        // 5. dining area east of the center: unlit campfire, log benches, hay for prey
+        set(world, cx + 2, g - 4, cz, Blocks.COBBLESTONE.defaultBlockState());
+        set(world, cx + 2, g - 3, cz, Blocks.CAMPFIRE.defaultBlockState().setValue(CampfireBlock.LIT, Boolean.FALSE));
+        for (int dx = 1; dx <= 3; dx++) {
+            set(world, cx + dx, g - 3, cz - 2, log(Direction.Axis.X));
+            set(world, cx + dx, g - 3, cz + 2, log(Direction.Axis.X));
         }
         set(world, cx + 4, g - 3, cz, Blocks.HAY_BLOCK.defaultBlockState());
+        set(world, cx + 4, g - 3, cz + 1, Blocks.HAY_BLOCK.defaultBlockState());
+        set(world, cx + 4, g - 2, cz, Blocks.HAY_BLOCK.defaultBlockState());
 
         // 6. dens: {dirX, dirZ, offset}
         int[][] dens = {
@@ -143,26 +202,6 @@ public final class SettlementBuilder {
         for (int i = 0; i < dens.length; i++) {
             buildDen(world, cx, cz, g, dens[i][0], dens[i][1], dens[i][2], carpets[i], i == 0);
         }
-
-        // 7. entrance in the south: open trench with steps, thorn walls and a leaf arch
-        for (int k = 0; k <= 3; k++) {
-            int z = cz + 9 + k;
-            int standing = g - 4 + k;
-            for (int y = standing + 1; y <= g; y++) {
-                set(world, cx, y, z, air());
-            }
-        }
-        for (int z = cz + 9; z <= cz + 13; z++) {
-            for (int side = -1; side <= 1; side += 2) {
-                set(world, cx + side, g + 1, z, leaves());
-                set(world, cx + side, g + 2, z, leaves());
-            }
-        }
-        for (int z = cz + 12; z <= cz + 13; z++) {
-            for (int dx = -1; dx <= 1; dx++) {
-                set(world, cx + dx, g + 3, z, leaves());
-            }
-        }
     }
 
     private static void buildDen(ServerWorld world, int cx, int cz, int g, int dirX, int dirZ, int offset,
@@ -170,13 +209,24 @@ public final class SettlementBuilder {
         int perpX = Math.abs(dirZ);
         int perpZ = Math.abs(dirX);
 
-        // entrance tunnel: exactly one block high
-        int tx = cx + dirX * 8 + perpX * offset;
-        int tz = cz + dirZ * 8 + perpZ * offset;
-        set(world, tx, g - 3, tz, air());
+        // entrance tunnel: three cells, exactly one block high (cat size)
+        for (int t = 5; t <= 7; t++) {
+            set(world, cx + dirX * t + perpX * offset, g - 3, cz + dirZ * t + perpZ * offset, air());
+        }
+
+        // wooden frame around the entrance: two posts and a beam above
+        Direction.Axis beamAxis = perpX != 0 ? Direction.Axis.X : Direction.Axis.Z;
+        for (int s = -1; s <= 1; s += 2) {
+            set(world, cx + dirX * 5 + perpX * (offset + s), g - 3, cz + dirZ * 5 + perpZ * (offset + s),
+                    log(Direction.Axis.Y));
+        }
+        for (int s = -1; s <= 1; s++) {
+            set(world, cx + dirX * 5 + perpX * (offset + s), g - 2, cz + dirZ * 5 + perpZ * (offset + s),
+                    log(beamAxis));
+        }
 
         // chamber 3x3, two blocks high
-        for (int t = 9; t <= 11; t++) {
+        for (int t = 8; t <= 10; t++) {
             for (int s = -1; s <= 1; s++) {
                 int x = cx + dirX * t + perpX * (offset + s);
                 int z = cz + dirZ * t + perpZ * (offset + s);
@@ -186,24 +236,23 @@ public final class SettlementBuilder {
         }
 
         // beds: carpets on both sides of the back part
-        for (int t = 10; t <= 11; t++) {
+        for (int t = 9; t <= 10; t++) {
             for (int s = -1; s <= 1; s += 2) {
-                int x = cx + dirX * t + perpX * (offset + s);
-                int z = cz + dirZ * t + perpZ * (offset + s);
-                set(world, x, g - 3, z, carpet.defaultBlockState());
+                set(world, cx + dirX * t + perpX * (offset + s), g - 3, cz + dirZ * t + perpZ * (offset + s),
+                        carpet.defaultBlockState());
             }
         }
 
         if (healers) {
             // herbs near the entrance
-            set(world, cx + dirX * 9 + perpX * (offset - 1), g - 3, cz + dirZ * 9 + perpZ * (offset - 1),
+            set(world, cx + dirX * 8 + perpX * (offset - 1), g - 3, cz + dirZ * 8 + perpZ * (offset - 1),
                     Blocks.FERN.defaultBlockState());
-            set(world, cx + dirX * 9 + perpX * offset, g - 3, cz + dirZ * 9 + perpZ * offset,
+            set(world, cx + dirX * 8 + perpX * offset, g - 3, cz + dirZ * 8 + perpZ * offset,
                     Blocks.POPPY.defaultBlockState());
-            set(world, cx + dirX * 9 + perpX * (offset + 1), g - 3, cz + dirZ * 9 + perpZ * (offset + 1),
+            set(world, cx + dirX * 8 + perpX * (offset + 1), g - 3, cz + dirZ * 8 + perpZ * (offset + 1),
                     Blocks.DANDELION.defaultBlockState());
             // half-block niche in the back wall (for storing herbs later)
-            set(world, cx + dirX * 12 + perpX * offset, g - 3, cz + dirZ * 12 + perpZ * offset,
+            set(world, cx + dirX * 11 + perpX * offset, g - 3, cz + dirZ * 11 + perpZ * offset,
                     Blocks.COBBLESTONE_SLAB.defaultBlockState());
         }
     }

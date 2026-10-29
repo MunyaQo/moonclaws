@@ -1,8 +1,12 @@
 {
   "item.moonclaws.moon_stone": "Лунный камень",
+  "item.moonclaws.stray_cat_egg": "Яйцо призыва бродячего кота",
+  "entity.moonclaws.stray_cat": "Бродячий кот",
   "gui.moonclaws.clan.title": "Выбери племя",
   "gui.moonclaws.clan.thunder": "Грозовое племя (сильнее когти)",
   "gui.moonclaws.clan.river": "Речное племя (быстро плавает)",
   "gui.moonclaws.clan.wind": "Ветреное племя (быстрее бегает)",
-  "gui.moonclaws.clan.shadow": "Тенистое племя (быстрее в темноте)"
+  "gui.moonclaws.clan.shadow": "Тенистое племя (быстрее в темноте)",
+  "gui.moonclaws.trade.title": "Бродячий кот: принеси добычу, получи вещи",
+  "gui.moonclaws.trade.close": "Закрыть"
 }

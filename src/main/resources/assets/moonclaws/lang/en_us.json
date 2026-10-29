@@ -1,8 +1,12 @@
 {
   "item.moonclaws.moon_stone": "Moon Stone",
+  "item.moonclaws.stray_cat_egg": "Stray Cat Spawn Egg",
+  "entity.moonclaws.stray_cat": "Stray Cat",
   "gui.moonclaws.clan.title": "Choose your clan",
   "gui.moonclaws.clan.thunder": "ThunderClan (stronger claws)",
   "gui.moonclaws.clan.river": "RiverClan (fast swimmer)",
   "gui.moonclaws.clan.wind": "WindClan (faster runner)",
-  "gui.moonclaws.clan.shadow": "ShadowClan (faster in the dark)"
+  "gui.moonclaws.clan.shadow": "ShadowClan (faster in the dark)",
+  "gui.moonclaws.trade.title": "Stray cat: bring prey, get things",
+  "gui.moonclaws.trade.close": "Close"
 }
