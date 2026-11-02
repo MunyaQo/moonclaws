@@ -42,6 +42,8 @@ public class ClanCatEntity extends CatEntity {
 
     /** How far from the camp center cats wander. */
     public static final int HOME_RADIUS = 11;
+    /** How far from the camp center cats chase an enemy. */
+    public static final int FIGHT_RADIUS = 24;
 
     private int settlementId;
     private int rank = CatState.RANK_WARRIOR;
@@ -55,10 +57,115 @@ public class ClanCatEntity extends CatEntity {
     private BlockPos home;
     private int lastHurtByPlayerTick = -10000;
     private final CatMerchant merchant = new CatMerchant(this);
+    /** Came from a Twoleg house; the others sometimes tease it. */
+    private boolean formerKittypet;
+    /** Still has the Twoleg name: the leader names it at the next sunset. */
+    private boolean awaitingName;
 
     public ClanCatEntity(EntityType<? extends CatEntity> type, World world) {
         super(type, world);
         this.setPersistenceRequired();
+        // added here (not in registerGoals) because the merchant exists only after the constructor of CatEntity
+        this.goalSelector.addGoal(0, new TradeStillGoal(this, merchant));
+        this.goalSelector.addGoal(1, new NightGuardGoal(this));
+    }
+
+    // ------------------------------------------------------------------ night guard
+
+    private long guardCheckedDay = -1;
+    private long lastGuardDay = -100;
+
+    private long day() {
+        return level.getDayTime() / 24000L;
+    }
+
+    private long timeOfDay() {
+        return level.getDayTime() % 24000L;
+    }
+
+    static final int GUARD_NONE = 0;
+    static final int GUARD_INNER = 1;
+    static final int GUARD_OUTER = 2;
+
+    private int guardRole;
+
+    /**
+     * Tonight's guards, in turn by day: a warrior walks outside the hedge, an apprentice inside it.
+     * No apprentice: a second warrior walks inside. Only one warrior: the deputy joins him.
+     */
+    int guardRole() {
+        if (rank != CatState.RANK_WARRIOR && rank != CatState.RANK_APPRENTICE && rank != CatState.RANK_DEPUTY) {
+            return GUARD_NONE;
+        }
+        long d = day();
+        if (guardCheckedDay != d) {
+            guardCheckedDay = d;
+            List<ClanCatEntity> all = level.getEntitiesOfClass(ClanCatEntity.class, getBoundingBox().inflate(40.0D),
+                    c -> c.settlementId == settlementId && c.isAlive());
+            List<ClanCatEntity> warriors = new java.util.ArrayList<>();
+            List<ClanCatEntity> apprentices = new java.util.ArrayList<>();
+            List<ClanCatEntity> deputies = new java.util.ArrayList<>();
+            for (ClanCatEntity c : all) {
+                if (c.rank == CatState.RANK_WARRIOR) {
+                    warriors.add(c);
+                } else if (c.rank == CatState.RANK_APPRENTICE) {
+                    apprentices.add(c);
+                } else if (c.rank == CatState.RANK_DEPUTY) {
+                    deputies.add(c);
+                }
+            }
+            java.util.Comparator<ClanCatEntity> byId = (a, b) -> a.getUUID().compareTo(b.getUUID());
+            warriors.sort(byId);
+            apprentices.sort(byId);
+            deputies.sort(byId);
+            ClanCatEntity outer = null;
+            ClanCatEntity inner = null;
+            int w = warriors.size();
+            if (w > 0) {
+                outer = warriors.get((int) (d % w));
+            } else if (!deputies.isEmpty()) {
+                outer = deputies.get(0);
+            }
+            if (!apprentices.isEmpty()) {
+                inner = apprentices.get((int) (d % apprentices.size()));
+            } else if (w >= 2) {
+                inner = warriors.get((int) ((d + 1) % w));
+            } else if (w == 1 && !deputies.isEmpty()) {
+                inner = deputies.get(0);
+            }
+            guardRole = this == outer ? GUARD_OUTER : this == inner ? GUARD_INNER : GUARD_NONE;
+        }
+        return guardRole;
+    }
+
+    boolean isGuardTonight() {
+        return guardRole() != GUARD_NONE;
+    }
+
+    /** After a night on guard the cat sleeps till noon. */
+    boolean sleepsAfterGuard() {
+        return lastGuardDay == day() - 1 && timeOfDay() < 6000L;
+    }
+
+    @Nullable
+    BlockPos getHome() {
+        return home;
+    }
+
+    /** Wake the fighters of the settlement and send them at a mob. */
+    void raiseAlarm(LivingEntity mob) {
+        playSound(SoundEvents.CAT_HISS, 1.0F, 1.2F);
+        List<ClanCatEntity> fighters = level.getEntitiesOfClass(ClanCatEntity.class, getBoundingBox().inflate(32.0D),
+                c -> c.settlementId == settlementId && c.isFighter() && c.isAlive());
+        for (ClanCatEntity c : fighters) {
+            c.setLying(false);
+            c.setTarget(mob);
+            c.lastHurtByPlayerTick = c.tickCount; // reuse the "angry for 30 s" timer
+        }
+        if (isFighter()) {
+            setTarget(mob);
+            lastHurtByPlayerTick = tickCount;
+        }
     }
 
     // ------------------------------------------------------------------ setup
@@ -78,7 +185,26 @@ public class ClanCatEntity extends CatEntity {
         refreshName();
     }
 
+    @Nullable
+    public BlockPos getNest() {
+        return nest;
+    }
+
+    public boolean isFormerKittypet() {
+        return formerKittypet;
+    }
+
+    /** A kittypet that just came to the camp: keeps its Twoleg name till the sunset ceremony. */
+    public void becomeFormerKittypet() {
+        formerKittypet = true;
+        awaitingName = true;
+        refreshName();
+    }
+
     public String getCatName() {
+        if (awaitingName) {
+            return kitName;
+        }
         return CatNames.compose(rank, CatNames.LANG_RU, kitName, stem, ending);
     }
 
@@ -152,14 +278,65 @@ public class ClanCatEntity extends CatEntity {
             LivingEntity target = getTarget();
             if (target != null) {
                 boolean tooLong = this.tickCount - lastHurtByPlayerTick > 600;
-                boolean tooFar = home != null && target.position().distanceToSqr(Vector3d.atCenterOf(home)) > 24.0D * 24.0D;
+                boolean tooFar = home != null && target.position().distanceToSqr(Vector3d.atCenterOf(home)) > 28.0D * 28.0D;
                 if (tooLong || tooFar || !target.isAlive()) {
                     setTarget(null);
                 }
             }
-            if (home != null && !hasRestriction()) {
-                restrictTo(home, HOME_RADIUS);
+            if (home != null) {
+                // in a fight the cats may run out of the camp (up to 24 blocks), otherwise they stay inside
+                int radius = getTarget() != null ? FIGHT_RADIUS : HOME_RADIUS;
+                if (!hasRestriction() || getRestrictRadius() != radius) {
+                    restrictTo(home, radius);
+                }
             }
+            if (tickCount % 20 == 0) {
+                kittypetLife();
+            }
+        }
+    }
+
+    /** Sunset naming ceremony for a newcomer from a Twoleg house, and a bit of teasing later. */
+    private void kittypetLife() {
+        if (!formerKittypet || !(level instanceof ServerWorld)) {
+            return;
+        }
+        if (awaitingName) {
+            long t = timeOfDay();
+            if (t >= 12000L && t < 13000L) {
+                awaitingName = false;
+                String oldName = kitName;
+                refreshName();
+                SettlementData.Settlement s = SettlementData.get((ServerWorld) level).getSettlement(settlementId);
+                String leader = s != null ? s.leaderName : "";
+                for (PlayerEntity p : level.getEntitiesOfClass(PlayerEntity.class, getBoundingBox().inflate(32.0D))) {
+                    p.displayClientMessage(new TranslationTextComponent(gender == CatState.GENDER_SHE
+                            ? "message.moonclaws.kittypet_ceremony_she" : "message.moonclaws.kittypet_ceremony",
+                            leader, oldName, getCatName()), false);
+                }
+                playSound(SoundEvents.CAT_PURREOW, 1.0F, 1.0F);
+            }
+            return;
+        }
+        if (tickCount % 1200 != 0 || random.nextInt(3) != 0 || isLying()) {
+            return;
+        }
+        List<PlayerEntity> players = level.getEntitiesOfClass(PlayerEntity.class, getBoundingBox().inflate(12.0D),
+                CatState::isCat);
+        if (players.isEmpty()) {
+            return;
+        }
+        List<ClanCatEntity> others = level.getEntitiesOfClass(ClanCatEntity.class, getBoundingBox().inflate(8.0D),
+                c -> c != this && c.settlementId == settlementId && !c.formerKittypet && !c.isLying()
+                        && c.rank != CatState.RANK_KIT);
+        if (others.isEmpty()) {
+            return;
+        }
+        ClanCatEntity teaser = others.get(random.nextInt(others.size()));
+        TranslationTextComponent line = new TranslationTextComponent("message.moonclaws.tease_" + random.nextInt(4),
+                teaser.getCatName(), getCatName());
+        for (PlayerEntity p : players) {
+            p.displayClientMessage(line, true);
         }
     }
 
@@ -167,21 +344,41 @@ public class ClanCatEntity extends CatEntity {
     @Override
     public boolean hurt(DamageSource source, float amount) {
         boolean result = super.hurt(source, amount);
-        if (result && !level.isClientSide && source.getEntity() instanceof PlayerEntity) {
-            PlayerEntity attacker = (PlayerEntity) source.getEntity();
-            if (!attacker.isCreative() && !attacker.isSpectator()) {
-                List<ClanCatEntity> cats = level.getEntitiesOfClass(ClanCatEntity.class, getBoundingBox().inflate(24.0D),
-                        c -> c.settlementId == this.settlementId && c.isFighter());
-                for (ClanCatEntity c : cats) {
-                    c.setTarget(attacker);
-                    c.lastHurtByPlayerTick = c.tickCount;
-                    c.setLying(false);
-                }
+        if (result && !level.isClientSide && source.getEntity() instanceof LivingEntity
+                && !(source.getEntity() instanceof ClanCatEntity
+                     && ((ClanCatEntity) source.getEntity()).settlementId == this.settlementId)) {
+            LivingEntity attacker = (LivingEntity) source.getEntity();
+            if (!(attacker instanceof PlayerEntity)
+                    || !((PlayerEntity) attacker).isCreative() && !((PlayerEntity) attacker).isSpectator()) {
+                alarm(level, settlementId, attacker, this);
                 setLying(false);
                 lastHurtByPlayerTick = tickCount;
             }
         }
         return result;
+    }
+
+    /**
+     * The whole camp hears it: all fighters of the settlement wake up and go for the attacker
+     * (they may leave the camp up to FIGHT_RADIUS blocks).
+     */
+    public static int alarm(World level, int settlementId, LivingEntity attacker, net.minecraft.entity.Entity near) {
+        List<ClanCatEntity> cats = level.getEntitiesOfClass(ClanCatEntity.class, near.getBoundingBox().inflate(40.0D),
+                c -> c.settlementId == settlementId && c.isFighter() && c.isAlive());
+        for (ClanCatEntity c : cats) {
+            if (c.home != null) {
+                c.restrictTo(c.home, FIGHT_RADIUS);
+            }
+            c.setTarget(attacker);
+            c.lastHurtByPlayerTick = c.tickCount;
+            c.setLying(false);
+        }
+        if (!cats.isEmpty()) {
+            org.apache.logging.log4j.LogManager.getLogger("Moonclaws").info(
+                    "[Moonclaws] alarm in settlement {}: {} fighters go for {}", settlementId, cats.size(),
+                    attacker.getType().getRegistryName());
+        }
+        return cats.size();
     }
 
     @Override
@@ -278,6 +475,8 @@ public class ClanCatEntity extends CatEntity {
             c.putLong("Home", home.asLong());
         }
         c.put("Trade", merchant.save());
+        c.putBoolean("FormerKittypet", formerKittypet);
+        c.putBoolean("AwaitingName", awaitingName);
         tag.put("Moonclaws", c);
     }
 
@@ -297,6 +496,8 @@ public class ClanCatEntity extends CatEntity {
         if (!merchant.hasOffers()) {
             merchant.setOffers(CatTrades.forRank(rank));
         }
+        formerKittypet = c.getBoolean("FormerKittypet");
+        awaitingName = c.getBoolean("AwaitingName");
         if (home != null) {
             restrictTo(home, HOME_RADIUS);
         }
@@ -320,7 +521,74 @@ public class ClanCatEntity extends CatEntity {
 
         @Override
         public boolean canUse() {
-            return cat.level.isNight() && cat.getTarget() == null && nestOk();
+            if (cat.getTarget() != null || cat.merchant.isTrading() || !nestOk()) {
+                return false;
+            }
+            boolean night = cat.level.isNight() && !cat.isGuardTonight();
+            return night || cat.sleepsAfterGuard();
+        }
+
+        @Override
+        public boolean canContinueToUse() {
+            return canUse();
+        }
+
+        private int startTick;
+
+        @Override
+        public void start() {
+            startTick = cat.tickCount;
+            cat.getNavigation().moveTo(cat.nest.getX() + 0.5D, cat.nest.getY(), cat.nest.getZ() + 0.5D, 1.0D);
+        }
+
+        private void lieDown() {
+            cat.getNavigation().stop();
+            cat.setPos(cat.nest.getX() + 0.5D, cat.nest.getY() + NestBlock.HOLLOW_Y - 0.12D, cat.nest.getZ() + 0.5D);
+            cat.setLying(true);
+        }
+
+        @Override
+        public void tick() {
+            double dx = cat.getX() - (cat.nest.getX() + 0.5D);
+            double dz = cat.getZ() - (cat.nest.getZ() + 0.5D);
+            if (dx * dx + dz * dz < 1.0D) {
+                lieDown();
+            } else if (cat.tickCount - startTick > 1200) {
+                // could not find the way in a minute (stuck at a den entrance): just go to the nest
+                lieDown();
+            } else if (cat.getNavigation().isDone()) {
+                cat.getNavigation().moveTo(cat.nest.getX() + 0.5D, cat.nest.getY(), cat.nest.getZ() + 0.5D, 1.0D);
+            }
+        }
+
+        @Override
+        public void stop() {
+            cat.setLying(false);
+        }
+    }
+
+    /**
+     * Night guard: the inner guard walks along the inside of the hedge, the outer one around the camp
+     * about 5 blocks beyond it. Hostile mobs are neutral to cats, so the guard only stops and watches them;
+     * the alarm is raised when someone actually hurts a clan cat (see hurt()).
+     */
+    static class NightGuardGoal extends Goal {
+        private final ClanCatEntity cat;
+        private int point;
+        private int pointTicks;
+        private int watchTicks;
+        @Nullable
+        private LivingEntity watched;
+
+        NightGuardGoal(ClanCatEntity cat) {
+            this.cat = cat;
+            this.setFlags(EnumSet.of(Goal.Flag.MOVE, Goal.Flag.JUMP, Goal.Flag.LOOK));
+        }
+
+        @Override
+        public boolean canUse() {
+            return cat.level.isNight() && cat.getTarget() == null && !cat.merchant.isTrading()
+                    && cat.getHome() != null && cat.isGuardTonight();
         }
 
         @Override
@@ -330,25 +598,56 @@ public class ClanCatEntity extends CatEntity {
 
         @Override
         public void start() {
-            cat.getNavigation().moveTo(cat.nest.getX() + 0.5D, cat.nest.getY(), cat.nest.getZ() + 0.5D, 1.0D);
+            cat.setLying(false);
+            cat.lastGuardDay = cat.day();
+            point = cat.getRandom().nextInt(8);
+            watchTicks = 0;
+            goNext();
         }
 
-        @Override
-        public void tick() {
-            double dx = cat.getX() - (cat.nest.getX() + 0.5D);
-            double dz = cat.getZ() - (cat.nest.getZ() + 0.5D);
-            if (dx * dx + dz * dz < 1.0D) {
-                cat.getNavigation().stop();
-                cat.setPos(cat.nest.getX() + 0.5D, cat.nest.getY() + NestBlock.HOLLOW_Y - 0.12D, cat.nest.getZ() + 0.5D);
-                cat.setLying(true);
-            } else if (cat.getNavigation().isDone()) {
-                cat.getNavigation().moveTo(cat.nest.getX() + 0.5D, cat.nest.getY(), cat.nest.getZ() + 0.5D, 1.0D);
+        private void goNext() {
+            BlockPos home = cat.getHome();
+            double r = cat.guardRole() == GUARD_OUTER ? 15.0D : 9.0D;
+            pointTicks = 0;
+            double a = point * Math.PI / 4.0D;
+            int x = home.getX() + (int) Math.round(Math.cos(a) * r);
+            int z = home.getZ() + (int) Math.round(Math.sin(a) * r);
+            int y = cat.level.getHeight(net.minecraft.world.gen.Heightmap.Type.MOTION_BLOCKING_NO_LEAVES, x, z);
+            boolean ok = cat.getNavigation().moveTo(x + 0.5D, y, z + 0.5D, 0.8D);
+            net.minecraft.pathfinding.Path path = cat.getNavigation().getPath();
+            if (!ok || path == null || !path.canReach()) {
+                pointTicks = 240; // can't get there: try the next point soon
             }
         }
 
         @Override
-        public void stop() {
-            cat.setLying(false);
+        public void tick() {
+            cat.lastGuardDay = cat.day();
+            if (cat.tickCount % 10 == 0) {
+                List<net.minecraft.entity.monster.MonsterEntity> mobs = cat.level.getEntitiesOfClass(
+                        net.minecraft.entity.monster.MonsterEntity.class, cat.getBoundingBox().inflate(10.0D),
+                        LivingEntity::isAlive);
+                watched = mobs.isEmpty() ? null : mobs.get(0);
+                if (watched == null) {
+                    watchTicks = 0;
+                }
+            }
+            // a mob nearby: stop and keep an eye on it for up to 10 s, but don't start a fight
+            if (watched != null && watched.isAlive() && watchTicks < 200) {
+                watchTicks++;
+                cat.getNavigation().stop();
+                cat.getLookControl().setLookAt(watched, 30.0F, 30.0F);
+                if (watchTicks == 200) {
+                    goNext();
+                }
+                return;
+            }
+            pointTicks++;
+            // the next point when this one is reached, or can't be reached (trees, water, cliffs) within 15 s
+            if (cat.getNavigation().isDone() || pointTicks > 300) {
+                point = (point + 1) % 8;
+                goNext();
+            }
         }
     }
 

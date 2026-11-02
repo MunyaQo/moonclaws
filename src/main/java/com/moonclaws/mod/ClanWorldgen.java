@@ -33,7 +33,7 @@ public final class ClanWorldgen {
     public static final int REGION = 1024;
     public static final int RING = 96;
     /** Raise when the place-finding rules change (empty regions are checked again). */
-    private static final int PLAN_VERSION = 3;          // settlements are ~6 chunks from the Council
+    private static final int PLAN_VERSION = 4;          // settlements are ~6 chunks from the Council
     /** Build as soon as the chunks are there, far away, so the player does not see it appear. */
     private static final int BUILD_DISTANCE = 240;
     /** The builders dig the camp into the ground, so some unevenness is fine. */
@@ -56,6 +56,9 @@ public final class ClanWorldgen {
         Biome.Category c = biome.getBiomeCategory();
         ResourceLocation id = world.registryAccess().registryOrThrow(Registry.BIOME_REGISTRY).getKey(biome);
         String name = id == null ? "" : id.getPath();
+        if (c == Biome.Category.SWAMP || name.contains("dark_forest")) {
+            return CouncilBuilder.WOOD_DARK_OAK;
+        }
         if (c == Biome.Category.FOREST) {
             return name.contains("birch") ? CouncilBuilder.WOOD_BIRCH : CouncilBuilder.WOOD_OAK;
         }
@@ -91,12 +94,14 @@ public final class ClanWorldgen {
                 heights.add(h);
             }
         }
-        // surface block = height - 1; under water if it is below the sea level
-        if (max - min > MAX_SLOPE || min - 1 < sea) {
+        // the center must be green, and at least 3 of the 4 corners
+        int centerWood = woodFor(world, biomeAt(gen, x, z));
+        if (centerWood < 0) {
             return Integer.MIN_VALUE;
         }
-        // the center must be green, and at least 3 of the 4 corners
-        if (woodFor(world, biomeAt(gen, x, z)) < 0) {
+        // surface block = height - 1; under water if it is below the sea level (swamps may be right at it)
+        int lowest = centerWood == CouncilBuilder.WOOD_DARK_OAK ? sea - 1 : sea;
+        if (max - min > MAX_SLOPE || min - 1 < lowest) {
             return Integer.MIN_VALUE;
         }
         int[][] corners = {{radius, radius}, {-radius, radius}, {radius, -radius}, {-radius, -radius}};
@@ -193,6 +198,10 @@ public final class ClanWorldgen {
      * Small ponds are fine: they are filled with earth when building.
      */
     private static int realGround(ServerWorld world, int x, int z, int radius) {
+        return realGround(world, x, z, radius, 5);
+    }
+
+    private static int realGround(ServerWorld world, int x, int z, int radius, int maxWater) {
         List<Integer> heights = new ArrayList<>();
         int[] offsets = {-radius, -radius / 2, 0, radius / 2, radius};
         int water = 0;
@@ -207,7 +216,7 @@ public final class ClanWorldgen {
                 heights.add(world.getHeight(Heightmap.Type.MOTION_BLOCKING_NO_LEAVES, x + ox, z + oz));
             }
         }
-        if (water > 5 || heights.isEmpty()) {
+        if (water > maxWater || heights.isEmpty()) {
             return Integer.MIN_VALUE;
         }
         Collections.sort(heights);
@@ -287,6 +296,17 @@ public final class ClanWorldgen {
             }
         }
         SettlementData data = SettlementData.get(world);
+        // camps built before 0.6.1 get their patrol trail once, when a player comes near
+        for (SettlementData.Settlement s : data.getSettlements()) {
+            if (!s.trail && near(world, s.center) && chunksLoaded(world, s.center.getX(), s.center.getZ(), 18)) {
+                boolean swamp = woodFor(world, world.getBiome(s.center)) == CouncilBuilder.WOOD_DARK_OAK;
+                PatrolTrail.build(world, s.center, swamp);
+                s.trail = true;
+                data.setDirty();
+                LOG.info("[Moonclaws] patrol trail laid around the settlement at {}", s.center);
+                return;
+            }
+        }
         for (Map.Entry<Long, SettlementData.Group> e : data.getGroups().entrySet()) {
             SettlementData.Group g = e.getValue();
             if (!g.councilBuilt && near(world, g.council) && chunksLoaded(world, g.council.getX(), g.council.getZ(), 20)) {
@@ -339,7 +359,8 @@ public final class ClanWorldgen {
 
     private static void buildCouncil(ServerWorld world, SettlementData.Group g) {
         g.councilBuilt = true;
-        int y = realGround(world, g.council.getX(), g.council.getZ(), 10);
+        boolean swampCouncil = woodFor(world, world.getBiome(g.council)) == CouncilBuilder.WOOD_DARK_OAK;
+        int y = realGround(world, g.council.getX(), g.council.getZ(), 10, swampCouncil ? 14 : 5);
         if (y == Integer.MIN_VALUE) {
             LOG.info("[Moonclaws] Council at {} skipped: water", g.council);
             return;
@@ -368,7 +389,8 @@ public final class ClanWorldgen {
     }
 
     public static SettlementData.Settlement buildSettlement(ServerWorld world, BlockPos site, int clan) {
-        int y = realGround(world, site.getX(), site.getZ(), 12);
+        boolean swamp = woodFor(world, world.getBiome(site)) == CouncilBuilder.WOOD_DARK_OAK;
+        int y = realGround(world, site.getX(), site.getZ(), 12, swamp ? 14 : 5);
         if (y == Integer.MIN_VALUE) {
             LOG.info("[Moonclaws] settlement at {} skipped: water", site);
             return null;
@@ -381,7 +403,12 @@ public final class ClanWorldgen {
         fillPonds(world, ground.getX(), ground.getZ(), y, 17);
         SettlementBuilder.clearTrees(world, ground.getX(), ground.getZ(), y, 17);
         SettlementBuilder.Layout layout = SettlementBuilder.build(world, ground);
+        if (swamp) {
+            SwampStyle.apply(world, layout);
+        }
         SettlementData.Settlement s = SettlementSpawner.populate(world, layout, clan, new Random(ground.asLong()));
+        PatrolTrail.build(world, ground, swamp);
+        s.trail = true;
         LOG.info("[Moonclaws] built a settlement at {} (clan {})", ground, clan);
         return s;
     }

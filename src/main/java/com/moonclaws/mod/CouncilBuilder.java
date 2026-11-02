@@ -28,6 +28,7 @@ public final class CouncilBuilder {
     public static final int WOOD_OAK = 0;
     public static final int WOOD_BIRCH = 1;
     public static final int WOOD_SPRUCE = 2;
+    public static final int WOOD_DARK_OAK = 3;
 
     private static final int FLOOR_R = 9;
     private static final int TERRACE_R = 11;
@@ -44,14 +45,23 @@ public final class CouncilBuilder {
     }
 
     private static Block logOf(int wood) {
+        if (wood == WOOD_DARK_OAK) {
+            return Blocks.DARK_OAK_LOG;
+        }
         return wood == WOOD_BIRCH ? Blocks.BIRCH_LOG : (wood == WOOD_SPRUCE ? Blocks.SPRUCE_LOG : Blocks.OAK_LOG);
     }
 
     private static Block stairsOf(int wood) {
+        if (wood == WOOD_DARK_OAK) {
+            return Blocks.DARK_OAK_STAIRS;
+        }
         return wood == WOOD_BIRCH ? Blocks.BIRCH_STAIRS : (wood == WOOD_SPRUCE ? Blocks.SPRUCE_STAIRS : Blocks.OAK_STAIRS);
     }
 
     private static BlockState leavesOf(int wood) {
+        if (wood == WOOD_DARK_OAK) {
+            return Blocks.DARK_OAK_LEAVES.defaultBlockState().setValue(LeavesBlock.PERSISTENT, Boolean.TRUE);
+        }
         Block b = wood == WOOD_BIRCH ? Blocks.BIRCH_LEAVES : (wood == WOOD_SPRUCE ? Blocks.SPRUCE_LEAVES : Blocks.OAK_LEAVES);
         return b.defaultBlockState().setValue(LeavesBlock.PERSISTENT, Boolean.TRUE);
     }
@@ -160,6 +170,21 @@ public final class CouncilBuilder {
                 int n = rnd.nextInt(3);
                 set(world, cx + dx, topAt(r, floorY, g), cz + dz,
                         (n == 0 ? Blocks.GRAVEL : Blocks.COARSE_DIRT).defaultBlockState());
+            }
+        }
+
+        // swamp: the rock stands on an island, water around it (the paths of the cross stay dry)
+        if (wood == WOOD_DARK_OAK) {
+            for (int dx = -4; dx <= 4; dx++) {
+                for (int dz = -4; dz <= 4; dz++) {
+                    double r = Math.sqrt(dx * dx + dz * dz);
+                    if (r >= 2.6D && r < 4.0D && Math.abs(dx) > 1 && Math.abs(dz) > 1) {
+                        set(world, cx + dx, floorY, cz + dz, Blocks.WATER.defaultBlockState());
+                        if (rnd.nextInt(3) == 0) {
+                            set(world, cx + dx, floorY + 1, cz + dz, Blocks.LILY_PAD.defaultBlockState());
+                        }
+                    }
+                }
             }
         }
 

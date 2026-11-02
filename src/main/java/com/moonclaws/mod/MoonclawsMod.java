@@ -96,6 +96,7 @@ public class MoonclawsMod {
         MinecraftForge.EVENT_BUS.register(new CommonEvents());
         MinecraftForge.EVENT_BUS.register(new RankEvents());
         MinecraftForge.EVENT_BUS.register(new ClanEvents());
+        MinecraftForge.EVENT_BUS.register(new KittypetEvents());
         DistExecutor.unsafeRunWhenOn(Dist.CLIENT, () -> () -> {
             MinecraftForge.EVENT_BUS.register(new ClientEvents());
             ClientSetup.register(modBus);
@@ -104,7 +105,10 @@ public class MoonclawsMod {
 
     private void entityAttributes(EntityAttributeCreationEvent event) {
         event.put(ModEntities.STRAY_CAT.get(), CatEntity.createAttributes().build());
-        event.put(ModEntities.CLAN_CAT.get(), CatEntity.createAttributes().build());
+        event.put(ModEntities.KITTYPET.get(), CatEntity.createAttributes()
+                .add(net.minecraft.entity.ai.attributes.Attributes.FOLLOW_RANGE, 32.0D).build());
+        event.put(ModEntities.CLAN_CAT.get(), CatEntity.createAttributes()
+                .add(net.minecraft.entity.ai.attributes.Attributes.FOLLOW_RANGE, 32.0D).build());
     }
 
     private void commonSetup(FMLCommonSetupEvent event) {

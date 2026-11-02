@@ -186,8 +186,14 @@ public class CommonEvents {
                     java.util.Random rnd = new java.util.Random();
                     SettlementBuilder.clearTrees(player.getLevel(), ground.getX(), ground.getZ(), ground.getY(), 17);
                     SettlementBuilder.Layout layout = SettlementBuilder.build(player.getLevel(), ground);
+                    boolean swamp = ClanWorldgen.woodFor(player.getLevel(), player.getLevel().getBiome(ground)) == CouncilBuilder.WOOD_DARK_OAK;
+                    if (swamp) {
+                        SwampStyle.apply(player.getLevel(), layout);
+                    }
                     SettlementData.Settlement s = SettlementSpawner.populate(player.getLevel(), layout,
                             rnd.nextInt(SettlementSpawner.CLAN_NAMES), rnd);
+                    PatrolTrail.build(player.getLevel(), ground, swamp);
+                    s.trail = true;
                     // move the player to the entrance path (south side)
                     player.teleportTo(ground.getX() + 0.5D, ground.getY() + 1.0D, ground.getZ() + 12.5D);
                     ctx.getSource().sendSuccess(new TranslationTextComponent("message.moonclaws.settlement_built",
@@ -210,6 +216,10 @@ public class CommonEvents {
                     ctx.getSource().sendSuccess(new TranslationTextComponent("message.moonclaws.council_built"), true);
                     return 1;
                 }))
+                .then(Commands.literal("kittypet").requires(source -> source.hasPermission(2))
+                        .executes(ctx -> spawnKittypet(ctx.getSource(), 0))
+                        .then(Commands.literal("witch").executes(ctx -> spawnKittypet(ctx.getSource(), 1)))
+                        .then(Commands.literal("wild").executes(ctx -> spawnKittypet(ctx.getSource(), 2))))
                 .then(Commands.literal("nearest").requires(source -> source.hasPermission(2)).executes(ctx -> {
                     ServerPlayerEntity player = ctx.getSource().getPlayerOrException();
                     java.util.List<SettlementData.Group> groups = ClanWorldgen.nearestGroups(player.getLevel(), player.blockPosition());
@@ -228,6 +238,26 @@ public class CommonEvents {
                     }
                     return 1;
                 })));
+    }
+
+    /** Test: a kittypet next to the player (0 normal, 1 witch's cat, 2 ready to leave: not neutered, pull 75). */
+    private static int spawnKittypet(net.minecraft.command.CommandSource source, int kind)
+            throws com.mojang.brigadier.exceptions.CommandSyntaxException {
+        ServerPlayerEntity player = source.getPlayerOrException();
+        KittypetEntity pet = ModEntities.KITTYPET.get().create(player.getLevel());
+        if (pet == null) {
+            return 0;
+        }
+        java.util.Random rnd = new java.util.Random();
+        pet.moveTo(player.getX() + 1.5D, player.getY(), player.getZ(), player.yRot + 180.0F, 0.0F);
+        pet.setupNew(rnd, kind == 1, rnd.nextInt(10));
+        if (kind == 2) {
+            pet.makeWild();
+        }
+        player.getLevel().addFreshEntity(pet);
+        source.sendSuccess(new TranslationTextComponent("message.moonclaws.kittypet_spawned", pet.getPetName(),
+                pet.isNeutered() ? "да" : "нет", pet.getPull()), false);
+        return 1;
     }
 
     /** No natural spawns of hostile mobs around settlements (48 blocks). */

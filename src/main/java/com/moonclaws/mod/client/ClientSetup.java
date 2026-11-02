@@ -21,6 +21,7 @@ public final class ClientSetup {
     private static void onClientSetup(FMLClientSetupEvent event) {
         RenderingRegistry.registerEntityRenderingHandler(ModEntities.STRAY_CAT.get(), manager -> new CatRenderer(manager));
         RenderingRegistry.registerEntityRenderingHandler(ModEntities.CLAN_CAT.get(), manager -> new CatRenderer(manager));
+        RenderingRegistry.registerEntityRenderingHandler(ModEntities.KITTYPET.get(), manager -> new CatRenderer(manager));
         event.enqueueWork(() -> {
             ScreenManager.register(MoonclawsMod.HEALER_CONTAINER.get(), HealerScreen::new);
             ScreenManager.register(MoonclawsMod.CAT_TRADE.get(), CatTradeScreen::new);

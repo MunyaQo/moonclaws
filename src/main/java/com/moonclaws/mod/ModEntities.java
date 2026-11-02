@@ -23,6 +23,12 @@ public final class ModEntities {
                     .clientTrackingRange(10)
                     .build(MoonclawsMod.MODID + ":clan_cat"));
 
+    public static final RegistryObject<EntityType<KittypetEntity>> KITTYPET = ENTITIES.register("kittypet",
+            () -> EntityType.Builder.<KittypetEntity>of(KittypetEntity::new, EntityClassification.CREATURE)
+                    .sized(0.6F, 0.7F)
+                    .clientTrackingRange(8)
+                    .build(MoonclawsMod.MODID + ":kittypet"));
+
     private ModEntities() {
     }
 }

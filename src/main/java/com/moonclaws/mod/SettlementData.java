@@ -58,6 +58,8 @@ public class SettlementData extends WorldSavedData {
         public BlockPos center;
         public int clan;
         public String leaderName = "";
+        /** The patrol trail around the camp is laid (0.6.1). */
+        public boolean trail;
         public final List<Den> dens = new ArrayList<>();
         public final List<BlockPos> nests = new ArrayList<>();
 
@@ -160,6 +162,10 @@ public class SettlementData extends WorldSavedData {
         return s;
     }
 
+    public java.util.Collection<Settlement> getSettlements() {
+        return settlements.values();
+    }
+
     public Settlement getSettlement(int id) {
         return settlements.get(id);
     }
@@ -258,6 +264,7 @@ public class SettlementData extends WorldSavedData {
             s.center = BlockPos.of(c.getLong("center"));
             s.clan = c.getInt("clan");
             s.leaderName = c.getString("leader");
+            s.trail = c.getBoolean("trail");
             fromLongs(c.getLongArray("nests"), s.nests);
             for (INBT dt : c.getList("dens", 10)) {
                 CompoundNBT d = (CompoundNBT) dt;
@@ -304,6 +311,7 @@ public class SettlementData extends WorldSavedData {
             c.putLong("center", s.center.asLong());
             c.putInt("clan", s.clan);
             c.putString("leader", s.leaderName);
+            c.putBoolean("trail", s.trail);
             c.putLongArray("nests", toLongs(s.nests));
             ListNBT dens = new ListNBT();
             for (Den d : s.dens) {

@@ -123,6 +123,9 @@ public class CatMerchant implements IMerchant {
             }
         }
         owner.playSound(SoundEvents.CAT_PURREOW, 0.8F, 1.0F);
+        if (owner instanceof KittypetEntity) {
+            ((KittypetEntity) owner).onTrade();
+        }
     }
 
     @Override

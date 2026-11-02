@@ -123,4 +123,23 @@ public class ClanEvents {
     public void onLogout(PlayerEvent.PlayerLoggedOutEvent event) {
         visits.remove(event.getPlayer().getUUID());
     }
+
+    /** A hostile mob hurts a cat-player in a camp or on its patrol trail: the clan defends its guest. */
+    @SubscribeEvent
+    public void onPlayerHurt(net.minecraftforge.event.entity.living.LivingHurtEvent event) {
+        if (!(event.getEntityLiving() instanceof ServerPlayerEntity)) {
+            return;
+        }
+        ServerPlayerEntity player = (ServerPlayerEntity) event.getEntityLiving();
+        net.minecraft.entity.Entity src = event.getSource().getEntity();
+        if (!CatState.isCat(player) || !(src instanceof net.minecraft.entity.monster.IMob)
+                || !(src instanceof net.minecraft.entity.LivingEntity)) {
+            return;
+        }
+        SettlementData.Settlement s = SettlementData.get(player.getLevel())
+                .settlementNear(player.getX(), player.getZ(), PatrolTrail.OUTER + 0.5D);
+        if (s != null) {
+            ClanCatEntity.alarm(player.level, s.id, (net.minecraft.entity.LivingEntity) src, player);
+        }
+    }
 }

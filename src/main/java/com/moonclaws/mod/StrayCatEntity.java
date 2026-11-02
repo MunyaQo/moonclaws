@@ -33,6 +33,7 @@ public class StrayCatEntity extends CatEntity {
     public StrayCatEntity(EntityType<? extends CatEntity> type, World world) {
         super(type, world);
         merchant.setOffers(CatTrades.stray());
+        this.goalSelector.addGoal(0, new TradeStillGoal(this, merchant));
     }
 
     /** 90% rare skin, 10% common skin. */

@@ -74,6 +74,39 @@ public final class SelfTest {
             return cat != null && cat.getAttribute(Attributes.MAX_HEALTH) != null;
         });
 
+        // 0.6.0 kittypets
+        t.check("kittypet has attributes and a collar", () -> {
+            KittypetEntity pet = ModEntities.KITTYPET.get().create(source.getLevel());
+            if (pet == null || pet.getAttribute(Attributes.MAX_HEALTH) == null) {
+                return false;
+            }
+            pet.setupNew(new java.util.Random(1), false, 2);
+            return pet.isTame() && pet.getOwnerUUID() == null && !pet.getPetName().isEmpty() && pet.getPull() <= 40;
+        });
+        t.check("witch cat is black", () -> {
+            KittypetEntity pet = ModEntities.KITTYPET.get().create(source.getLevel());
+            pet.setupNew(new java.util.Random(2), true, 3);
+            return pet.isWitchCat() && pet.getCatType() == KittypetEntity.ALL_BLACK;
+        });
+        t.check("kittypet trades: 4 offers", () -> CatTrades.kittypet(new java.util.Random(3)).size() == 4
+                && CatTrades.witchCat(new java.util.Random(4)).size() == 4);
+        t.check("red kittypet stem", () -> {
+            String st = KittypetEntity.stemFor(2, new java.util.Random(5));
+            return !st.isEmpty() && CatNames.compose(CatState.RANK_APPRENTICE, CatNames.LANG_RU, "Барсик", st, "").endsWith("лап");
+        });
+        t.check("neutered about 70%", () -> {
+            int n = 0;
+            java.util.Random r = new java.util.Random(6);
+            for (int i = 0; i < 200; i++) {
+                KittypetEntity pet = ModEntities.KITTYPET.get().create(source.getLevel());
+                pet.setupNew(r, false, 0);
+                if (pet.isNeutered()) {
+                    n++;
+                }
+            }
+            return n > 120 && n < 160;
+        });
+
         // data files
         t.check("recipe moon_stone", () -> recipe(server, "moon_stone").isPresent());
         t.check("recipe healer_stone gives the stone", () -> recipe(server, "healer_stone")

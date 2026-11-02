@@ -73,4 +73,40 @@ public final class CatTrades {
         o.add(offer(Items.BEEF, 1, of(Items.LEATHER, 2), 8));
         return o;
     }
+
+    /** House things for wild things: 4 random offers from the list. */
+    public static MerchantOffers kittypet(java.util.Random rnd) {
+        java.util.List<MerchantOffer> all = new java.util.ArrayList<>();
+        all.add(offer(Items.FEATHER, 3, of(Items.COOKED_COD, 2), 6));
+        all.add(offer(Items.FEATHER, 2, of(Items.COOKED_SALMON, 1), 6));
+        all.add(offer(Items.RABBIT_HIDE, 1, of(Items.BREAD, 2), 6));
+        all.add(offer(Items.SWEET_BERRIES, 4, of(Items.COOKIE, 4), 6));
+        all.add(offer(Items.FEATHER, 4, of(Items.STRING, 3), 6));
+        all.add(offer(Items.RABBIT_HIDE, 2, of(Items.WHITE_WOOL, 2), 6));
+        all.add(offer(Items.RABBIT_FOOT, 1, of(Items.LEATHER, 3), 4));
+        all.add(offer(Items.SWEET_BERRIES, 6, of(Items.PAPER, 4), 6));
+        return pick(all, rnd);
+    }
+
+    /** The witch's cat: herbs, poultice and "witch things" for herbs that don't grow in the swamp and cobweb. */
+    public static MerchantOffers witchCat(java.util.Random rnd) {
+        java.util.List<MerchantOffer> all = new java.util.ArrayList<>();
+        all.add(offer(Items.CORNFLOWER, 2, of(Items.SUGAR, 3), 6));
+        all.add(offer(Items.OXEYE_DAISY, 2, of(Items.GLASS_BOTTLE, 3), 6));
+        all.add(offer(Items.COBWEB, 1, of(Items.GLOWSTONE_DUST, 2), 4));
+        all.add(offer(Items.SWEET_BERRIES, 4, of(Items.SPIDER_EYE, 1), 4));
+        all.add(offer(Items.OXEYE_DAISY, 1, of(Items.POPPY, 3), 6));
+        all.add(offer(Items.CORNFLOWER, 1, Items.COBWEB, 1,
+                Medicine.make(Arrays.asList(Medicine.POPPY, Medicine.DANDELION), true, true), 3));
+        return pick(all, rnd);
+    }
+
+    private static MerchantOffers pick(java.util.List<MerchantOffer> all, java.util.Random rnd) {
+        java.util.Collections.shuffle(all, rnd);
+        MerchantOffers o = new MerchantOffers();
+        for (int i = 0; i < 4 && i < all.size(); i++) {
+            o.add(all.get(i));
+        }
+        return o;
+    }
 }

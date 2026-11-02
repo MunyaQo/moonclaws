@@ -93,7 +93,7 @@ public class ClientEvents {
             double floor = p.getSleepingPos().map(pos -> pos.getY() + 0.125D).orElse(p.getY());
             MatrixStack ms = event.getMatrixStack();
             ms.pushPose();
-            ms.translate(0.0D, floor - p.getY() + 0.26D, 0.0D);
+            ms.translate(0.0D, floor - p.getY() + 0.08D, 0.0D);
             ms.mulPose(Vector3f.YP.rotationDegrees(-yaw));
             ms.mulPose(Vector3f.ZP.rotationDegrees(90.0F));
             ms.translate(0.0D, -0.35D, 0.0D);
