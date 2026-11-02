@@ -1,5 +1,6 @@
 package com.moonclaws.mod.client;
 
+import com.moonclaws.mod.CatState;
 import java.util.UUID;
 import net.minecraft.client.Minecraft;
 import net.minecraft.entity.player.PlayerEntity;
@@ -10,15 +11,15 @@ public final class ClientHooks {
     private ClientHooks() {
     }
 
-    public static void openClanScreen() {
-        Minecraft.getInstance().setScreen(new ClanScreen());
+    public static void openCardScreen(CatState.Card card) {
+        Minecraft.getInstance().setScreen(new ClanScreen(card));
     }
 
     public static void openTradeScreen() {
         Minecraft.getInstance().setScreen(new TradeScreen());
     }
 
-    /** New state of a player arrived: recalculate his hitbox size. */
+    /** New state of a player arrived: recalculate his hitbox size and his shown name. */
     public static void onSync(UUID id) {
         Minecraft mc = Minecraft.getInstance();
         if (mc.level == null) {
@@ -27,6 +28,7 @@ public final class ClientHooks {
         PlayerEntity player = mc.level.getPlayerByUUID(id);
         if (player != null) {
             player.refreshDimensions();
+            player.refreshDisplayName();
         }
     }
 }

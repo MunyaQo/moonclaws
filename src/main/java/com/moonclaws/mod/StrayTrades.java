@@ -73,7 +73,8 @@ public final class StrayTrades {
             return false;
         }
         take(player, t.wants, t.wantsCount);
-        ItemStack reward = new ItemStack(t.gives, t.givesCount);
+        // deputies and elders are respected: they get a bit more
+        ItemStack reward = new ItemStack(t.gives, t.givesCount + CatState.tradeBonus(CatState.getRank(player)));
         if (!player.inventory.add(reward)) {
             player.drop(reward, false);
         }

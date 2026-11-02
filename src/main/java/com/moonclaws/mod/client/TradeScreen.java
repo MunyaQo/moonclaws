@@ -1,6 +1,7 @@
 package com.moonclaws.mod.client;
 
 import com.mojang.blaze3d.matrix.MatrixStack;
+import com.moonclaws.mod.CatState;
 import com.moonclaws.mod.ModNetwork;
 import com.moonclaws.mod.StrayTrades;
 import net.minecraft.client.gui.screen.Screen;
@@ -25,9 +26,11 @@ public class TradeScreen extends Screen {
         for (int i = 0; i < trades.length; i++) {
             final int index = i;
             StrayTrades.Trade t = trades[i];
+            int bonus = this.minecraft != null && this.minecraft.player != null
+                    ? CatState.tradeBonus(CatState.getRank(this.minecraft.player)) : 0;
             ITextComponent label = new StringTextComponent(t.wantsCount + " ")
                     .append(new ItemStack(t.wants).getHoverName())
-                    .append(new StringTextComponent("  ->  " + t.givesCount + " "))
+                    .append(new StringTextComponent("  ->  " + (t.givesCount + bonus) + " "))
                     .append(new ItemStack(t.gives).getHoverName());
             this.addButton(new Button(cx - 110, y + i * 26, 220, 20, label,
                     b -> ModNetwork.CHANNEL.sendToServer(new ModNetwork.TradePacket(index))));

@@ -26,7 +26,7 @@ public class StrayCatEggItem extends Item {
             return ActionResultType.FAIL;
         }
         cat.moveTo(pos.getX() + 0.5D, pos.getY(), pos.getZ() + 0.5D, world.random.nextFloat() * 360.0F, 0.0F);
-        cat.setCatType(StrayCatEntity.RARE_SKINS[world.random.nextInt(StrayCatEntity.RARE_SKINS.length)]);
+        cat.setCatType(StrayCatEntity.pickSkin(world.random));
         cat.setPersistenceRequired();
         world.addFreshEntity(cat);
         ItemStack stack = context.getItemInHand();

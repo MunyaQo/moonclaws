@@ -9,7 +9,11 @@ import net.minecraft.util.Hand;
 import net.minecraft.world.World;
 import net.minecraftforge.fml.network.PacketDistributor;
 
-/** Moon Stone: right click toggles between human and cat form. */
+/**
+ * Moon Stone: right click toggles between human and cat form.
+ * Shift + right click opens the cat card (sex, clan, class, coat, name).
+ * The very first time (or for cats from older versions) the card opens by itself.
+ */
 public class MoonStoneItem extends Item {
 
     public MoonStoneItem(Properties properties) {
@@ -21,16 +25,18 @@ public class MoonStoneItem extends Item {
         ItemStack stack = player.getItemInHand(hand);
         if (!world.isClientSide && player instanceof ServerPlayerEntity) {
             ServerPlayerEntity sp = (ServerPlayerEntity) player;
-            if (CatState.isCat(sp)) {
-                CatState.setCat(sp, false);
-            } else if (CatState.getClan(sp) == 0) {
-                // first transformation: ask the player to choose a clan
-                ModNetwork.CHANNEL.send(PacketDistributor.PLAYER.with(() -> sp), new ModNetwork.OpenClanScreenPacket());
+            if (sp.isShiftKeyDown() || !CatState.isCardDone(sp)) {
+                openCard(sp);
             } else {
-                CatState.setCat(sp, true);
+                CatState.setCat(sp, !CatState.isCat(sp));
             }
             player.getCooldowns().addCooldown(this, 20);
         }
         return ActionResult.sidedSuccess(stack, world.isClientSide());
+    }
+
+    public static void openCard(ServerPlayerEntity sp) {
+        ModNetwork.CHANNEL.send(PacketDistributor.PLAYER.with(() -> sp),
+                new ModNetwork.OpenCardPacket(CatState.readCard(sp)));
     }
 }

@@ -1,0 +1,17 @@
+{
+  "type": "minecraft:crafting_shapeless",
+  "ingredients": [
+    {
+      "item": "moonclaws:hay_nest"
+    },
+    {
+      "item": "minecraft:fern"
+    },
+    {
+      "item": "minecraft:fern"
+    }
+  ],
+  "result": {
+    "item": "moonclaws:fern_nest"
+  }
+}

@@ -1,5 +1,7 @@
 package com.moonclaws.mod;
 
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Random;
 import net.minecraft.block.Block;
 import net.minecraft.block.BlockState;
@@ -7,35 +9,71 @@ import net.minecraft.block.Blocks;
 import net.minecraft.block.CampfireBlock;
 import net.minecraft.block.LeavesBlock;
 import net.minecraft.block.RotatedPillarBlock;
+import net.minecraft.tags.BlockTags;
 import net.minecraft.util.Direction;
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.world.server.ServerWorld;
 
 /**
- * Demo cat settlement (version 0.2.0): a round forest hollow with terraces, a mossy rock pile for
- * meetings, a dining area with an unlit campfire, log benches and hay, and six den caves with wooden
- * frames dug into the slopes. Scaled for cats: den entrances are one block high.
+ * "Young clan" settlement: a round forest hollow with terraces, a mossy rock pile for meetings,
+ * a dining area with an unlit campfire, log benches and hay, and six den caves with wooden frames
+ * dug into the slopes. Scaled for cats: den entrances are one block high. Soft light comes from
+ * shroomlights ("glowing mushrooms") on the terrace edges; no torches or lanterns.
  *
  * Layout (north is up, the entrance path is in the south):
- *   north side: queens' den (red), herald's den (blue)
- *   west side:  apprentices' den (light gray), nursery (pink)
- *   east side:  healers' den (green, herbs, half-block niche), warriors' den (brown)
+ *   north side: she-cat warriors' den, leaders' den (leader + deputy)
+ *   west side:  apprentices' den, nursery (elders sleep there for now)
+ *   east side:  healers' den (herbs, half-block niche), warriors' den
  */
 public final class SettlementBuilder {
 
     private static final int PLATFORM = 13;
     private static final double PLATFORM_R2 = 13.5D * 13.5D;
 
-    // terrace borders (squared radius): floor, 1st, 2nd, 3rd terrace, then the normal surface
     private static final int FLOOR_R2 = 25;
     private static final int T1_R2 = 40;
     private static final int T2_R2 = 58;
     private static final int T3_R2 = 81;
 
+    /** dens: {dirX, dirZ, offset, den kind} */
+    private static final int[][] DENS = {
+            {1, 0, -3, SettlementData.DEN_HEALERS},
+            {1, 0, 3, SettlementData.DEN_WARRIORS},
+            {-1, 0, -3, SettlementData.DEN_APPRENTICES},
+            {-1, 0, 3, SettlementData.DEN_NURSERY},
+            {0, -1, -3, SettlementData.DEN_SHE_WARRIORS},
+            {0, -1, 3, SettlementData.DEN_LEADERS}
+    };
+
+    /** Places for nests inside a den: {t, s}, back row first. */
+    private static final int[][] SLOTS = {{10, -1}, {10, 1}, {9, -1}, {9, 1}, {10, 0}, {9, 0}};
+
+    /** What was built: the dens and the free nest places in each of them. */
+    public static final class Layout {
+        public final BlockPos center;
+        public final int floorY;
+        public final List<SettlementData.Den> dens = new ArrayList<>();
+        public final List<List<BlockPos>> slots = new ArrayList<>();
+
+        Layout(BlockPos center, int floorY) {
+            this.center = center;
+            this.floorY = floorY;
+        }
+
+        public List<BlockPos> slotsOf(int kind) {
+            for (int i = 0; i < dens.size(); i++) {
+                if (dens.get(i).kind == kind) {
+                    return slots.get(i);
+                }
+            }
+            return new ArrayList<>();
+        }
+    }
+
     private SettlementBuilder() {
     }
 
-    private static void set(ServerWorld world, int x, int y, int z, BlockState state) {
+    static void set(ServerWorld world, int x, int y, int z, BlockState state) {
         if (y < 1 || y > 254) {
             return;
         }
@@ -54,7 +92,6 @@ public final class SettlementBuilder {
         return Blocks.OAK_LOG.defaultBlockState().setValue(RotatedPillarBlock.AXIS, axis);
     }
 
-    /** 0 = pit floor, 1-3 = terraces, 4 = normal surface. */
     private static int level(int r2) {
         if (r2 <= FLOOR_R2) {
             return 0;
@@ -88,12 +125,37 @@ public final class SettlementBuilder {
         return b.defaultBlockState();
     }
 
-    /** @param ground the ground block under the player (its y is the surface level). */
-    public static void build(ServerWorld world, BlockPos ground) {
+    /** Removes logs, leaves, vines, snow layers and bee nests in one column. */
+    public static void clearColumn(ServerWorld world, int x, int z, int fromY, int toY) {
+        BlockPos.Mutable p = new BlockPos.Mutable();
+        for (int y = fromY; y <= toY; y++) {
+            p.set(x, y, z);
+            BlockState s = world.getBlockState(p);
+            if (s.is(BlockTags.LOGS) || s.is(BlockTags.LEAVES) || s.getBlock() == Blocks.VINE
+                    || s.getBlock() == Blocks.SNOW || s.getBlock() == Blocks.BEE_NEST) {
+                world.setBlock(p, air(), 2);
+            }
+        }
+    }
+
+    /** Removes whole trees (logs, leaves, vines) and snow layers around a place before building there. */
+    public static void clearTrees(ServerWorld world, int cx, int cz, int g, int radius) {
+        for (int dx = -radius; dx <= radius; dx++) {
+            for (int dz = -radius; dz <= radius; dz++) {
+                if (dx * dx + dz * dz <= radius * radius) {
+                    clearColumn(world, cx + dx, cz + dz, g - 3, g + 30);
+                }
+            }
+        }
+    }
+
+    /** @param ground the ground block (its y is the surface level). */
+    public static Layout build(ServerWorld world, BlockPos ground) {
         int cx = ground.getX();
         int cz = ground.getZ();
         int g = ground.getY();
         Random rnd = new Random(ground.asLong());
+        Layout layout = new Layout(ground.immutable(), g - 3);
 
         // 1. platform with terraces: solid below, grass on top, cleared sky above
         for (int dx = -PLATFORM; dx <= PLATFORM; dx++) {
@@ -111,7 +173,7 @@ public final class SettlementBuilder {
                 if (lvl == 0) {
                     topBlock = floor(rnd);
                 } else if (dx == 0 && dz >= 5) {
-                    topBlock = Blocks.COARSE_DIRT.defaultBlockState(); // entrance path in the south
+                    topBlock = Blocks.COARSE_DIRT.defaultBlockState();
                 } else {
                     topBlock = Blocks.GRASS_BLOCK.defaultBlockState();
                 }
@@ -186,26 +248,28 @@ public final class SettlementBuilder {
         set(world, cx + 4, g - 3, cz + 1, Blocks.HAY_BLOCK.defaultBlockState());
         set(world, cx + 4, g - 2, cz, Blocks.HAY_BLOCK.defaultBlockState());
 
-        // 6. dens: {dirX, dirZ, offset}
-        int[][] dens = {
-                {1, 0, -3},   // healers
-                {1, 0, 3},    // warriors
-                {-1, 0, -3},  // apprentices
-                {-1, 0, 3},   // nursery
-                {0, -1, -3},  // queens
-                {0, -1, 3}    // herald
-        };
-        Block[] carpets = {
-                Blocks.GREEN_CARPET, Blocks.BROWN_CARPET, Blocks.LIGHT_GRAY_CARPET,
-                Blocks.PINK_CARPET, Blocks.RED_CARPET, Blocks.BLUE_CARPET
-        };
-        for (int i = 0; i < dens.length; i++) {
-            buildDen(world, cx, cz, g, dens[i][0], dens[i][1], dens[i][2], carpets[i], i == 0);
+        // 6. soft light: shroomlights ("glowing mushrooms") on the inner edge of the first terrace
+        int[][] lights = {{4, 4}, {-4, 4}, {4, -4}, {-4, -4}, {5, 1}, {-1, -5}};
+        for (int[] l : lights) {
+            set(world, cx + l[0], g - 3, cz + l[1], Blocks.SHROOMLIGHT.defaultBlockState());
         }
+        // a few mushrooms on podzol near the walls
+        int[][] mush = {{3, 3}, {-3, 4}, {4, -2}, {-2, -4}};
+        for (int i = 0; i < mush.length; i++) {
+            set(world, cx + mush[i][0], g - 4, cz + mush[i][1], Blocks.PODZOL.defaultBlockState());
+            set(world, cx + mush[i][0], g - 3, cz + mush[i][1],
+                    (i % 2 == 0 ? Blocks.RED_MUSHROOM : Blocks.BROWN_MUSHROOM).defaultBlockState());
+        }
+
+        // 7. dens
+        for (int[] den : DENS) {
+            buildDen(world, layout, cx, cz, g, den[0], den[1], den[2], den[3]);
+        }
+        return layout;
     }
 
-    private static void buildDen(ServerWorld world, int cx, int cz, int g, int dirX, int dirZ, int offset,
-                                 Block carpet, boolean healers) {
+    private static void buildDen(ServerWorld world, Layout layout, int cx, int cz, int g, int dirX, int dirZ,
+                                 int offset, int kind) {
         int perpX = Math.abs(dirZ);
         int perpZ = Math.abs(dirX);
 
@@ -235,25 +299,35 @@ public final class SettlementBuilder {
             }
         }
 
-        // beds: carpets on both sides of the back part
-        for (int t = 9; t <= 10; t++) {
-            for (int s = -1; s <= 1; s += 2) {
-                set(world, cx + dirX * t + perpX * (offset + s), g - 3, cz + dirZ * t + perpZ * (offset + s),
-                        carpet.defaultBlockState());
-            }
-        }
-
-        if (healers) {
-            // herbs near the entrance
+        if (kind == SettlementData.DEN_HEALERS) {
             set(world, cx + dirX * 8 + perpX * (offset - 1), g - 3, cz + dirZ * 8 + perpZ * (offset - 1),
                     Blocks.FERN.defaultBlockState());
             set(world, cx + dirX * 8 + perpX * offset, g - 3, cz + dirZ * 8 + perpZ * offset,
                     Blocks.POPPY.defaultBlockState());
             set(world, cx + dirX * 8 + perpX * (offset + 1), g - 3, cz + dirZ * 8 + perpZ * (offset + 1),
                     Blocks.DANDELION.defaultBlockState());
-            // half-block niche in the back wall (for storing herbs later)
             set(world, cx + dirX * 11 + perpX * offset, g - 3, cz + dirZ * 11 + perpZ * offset,
                     Blocks.COBBLESTONE_SLAB.defaultBlockState());
         }
+
+        // the den box (tunnel + chamber) and the nest places
+        int x1 = cx + dirX * 6 + perpX * (offset - 1);
+        int z1 = cz + dirZ * 6 + perpZ * (offset - 1);
+        int x2 = cx + dirX * 10 + perpX * (offset + 1);
+        int z2 = cz + dirZ * 10 + perpZ * (offset + 1);
+        BlockPos min = new BlockPos(Math.min(x1, x2), g - 3, Math.min(z1, z2));
+        BlockPos max = new BlockPos(Math.max(x1, x2), g - 2, Math.max(z1, z2));
+        layout.dens.add(new SettlementData.Den(kind, min, max));
+        List<BlockPos> slots = new ArrayList<>();
+        for (int[] slot : SLOTS) {
+            slots.add(new BlockPos(cx + dirX * slot[0] + perpX * (offset + slot[1]), g - 3,
+                    cz + dirZ * slot[0] + perpZ * (offset + slot[1])));
+        }
+        if (kind == SettlementData.DEN_HEALERS) {
+            // the healers keep a Healer's Stone in their den
+            BlockPos stone = slots.remove(slots.size() - 1);
+            world.setBlock(stone, MoonclawsMod.HEALER_STONE.get().defaultBlockState(), 2);
+        }
+        layout.slots.add(slots);
     }
 }

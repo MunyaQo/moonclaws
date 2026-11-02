@@ -4,18 +4,24 @@ import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 
-/** Client-side copy of other players' cat state (filled by sync packets). No Minecraft client classes here. */
+/** Client-side copy of players' cat state (filled by sync packets). No Minecraft client classes here. */
 public final class ClientCatData {
 
     public static final class Info {
         public final boolean cat;
         public final int skin;
         public final int clan;
+        public final int gender;
+        public final int rank;
+        public final String name;
 
-        public Info(boolean cat, int skin, int clan) {
+        public Info(boolean cat, int skin, int clan, int gender, int rank, String name) {
             this.cat = cat;
             this.skin = skin;
             this.clan = clan;
+            this.gender = gender;
+            this.rank = rank;
+            this.name = name == null ? "" : name;
         }
     }
 
@@ -24,8 +30,8 @@ public final class ClientCatData {
     private ClientCatData() {
     }
 
-    public static void put(UUID id, boolean cat, int skin, int clan) {
-        MAP.put(id, new Info(cat, skin, clan));
+    public static void put(UUID id, Info info) {
+        MAP.put(id, info);
     }
 
     public static Info get(UUID id) {

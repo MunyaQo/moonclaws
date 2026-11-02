@@ -17,6 +17,12 @@ public final class ModEntities {
                     .clientTrackingRange(8)
                     .build(MoonclawsMod.MODID + ":stray_cat"));
 
+    public static final RegistryObject<EntityType<ClanCatEntity>> CLAN_CAT = ENTITIES.register("clan_cat",
+            () -> EntityType.Builder.<ClanCatEntity>of(ClanCatEntity::new, EntityClassification.CREATURE)
+                    .sized(0.6F, 0.7F)
+                    .clientTrackingRange(10)
+                    .build(MoonclawsMod.MODID + ":clan_cat"));
+
     private ModEntities() {
     }
 }

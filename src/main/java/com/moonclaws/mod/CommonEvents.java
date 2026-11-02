@@ -9,8 +9,13 @@ import net.minecraft.entity.Entity;
 import net.minecraft.entity.EntityClassification;
 import net.minecraft.entity.EntitySize;
 import net.minecraft.entity.EntityType;
+import net.minecraft.entity.MobEntity;
 import net.minecraft.entity.SpawnReason;
 import net.minecraft.entity.Pose;
+import net.minecraft.entity.boss.WitherEntity;
+import net.minecraft.entity.boss.dragon.EnderDragonEntity;
+import net.minecraft.entity.monster.ElderGuardianEntity;
+import net.minecraft.entity.monster.IMob;
 import net.minecraft.entity.player.PlayerEntity;
 import net.minecraft.entity.player.ServerPlayerEntity;
 import net.minecraft.item.ItemStack;
@@ -19,9 +24,11 @@ import net.minecraft.tileentity.CampfireTileEntity;
 import net.minecraft.tileentity.TileEntity;
 import net.minecraft.util.ActionResultType;
 import net.minecraft.util.Hand;
+import net.minecraft.util.SoundEvents;
 import net.minecraft.util.NonNullList;
 import net.minecraft.util.math.AxisAlignedBB;
 import net.minecraft.util.text.StringTextComponent;
+import net.minecraft.util.text.TranslationTextComponent;
 import net.minecraft.world.biome.Biome;
 import net.minecraft.world.biome.MobSpawnInfo;
 import net.minecraft.world.server.ServerWorld;
@@ -30,6 +37,8 @@ import net.minecraftforge.event.TickEvent;
 import net.minecraftforge.event.entity.EntityEvent;
 import net.minecraftforge.event.entity.living.LivingEntityUseItemEvent;
 import net.minecraftforge.event.entity.living.LivingFallEvent;
+import net.minecraftforge.event.entity.living.LivingHurtEvent;
+import net.minecraftforge.event.entity.living.LivingSetAttackTargetEvent;
 import net.minecraftforge.event.entity.living.LivingSpawnEvent;
 import net.minecraftforge.event.entity.player.PlayerEvent;
 import net.minecraftforge.event.entity.player.PlayerInteractEvent;
@@ -100,9 +109,10 @@ public class CommonEvents {
         // In half-block gaps it does not fit, so it keeps crawling (low pose).
         if (player.getPose() == Pose.SWIMMING && !player.isInWater() && !player.isSwimming()
                 && CatState.isCat(player)) {
+            double standHeight = CatState.getRank(player) == CatState.RANK_KIT ? 0.5D : 0.7D;
             AxisAlignedBB standingBox = new AxisAlignedBB(
                     player.getX() - 0.3D, player.getY(), player.getZ() - 0.3D,
-                    player.getX() + 0.3D, player.getY() + 0.7D, player.getZ() + 0.3D);
+                    player.getX() + 0.3D, player.getY() + standHeight, player.getZ() + 0.3D);
             if (player.level.noCollision(player, standingBox)) {
                 player.setPose(Pose.STANDING);
             }
@@ -111,6 +121,9 @@ public class CommonEvents {
         if (event.side == LogicalSide.SERVER && player instanceof ServerPlayerEntity
                 && player.tickCount % 10 == 0) {
             CatState.applyAbilities((ServerPlayerEntity) player);
+            if (CatState.isCat(player)) {
+                calmNearbyMobs((ServerPlayerEntity) player);
+            }
         }
     }
 
@@ -118,6 +131,14 @@ public class CommonEvents {
     @SubscribeEvent
     public void onBiomeLoad(BiomeLoadingEvent event) {
         List<MobSpawnInfo.Spawners> creatures = event.getSpawns().getSpawner(EntityClassification.CREATURE);
+
+        // stray cats: single, a bit rarer than wolves were, on any land biome (deserts included)
+        Biome.Category category = event.getCategory();
+        if (category != Biome.Category.OCEAN && category != Biome.Category.RIVER
+                && category != Biome.Category.MUSHROOM && category != Biome.Category.NETHER
+                && category != Biome.Category.THEEND && category != Biome.Category.NONE) {
+            creatures.add(new MobSpawnInfo.Spawners(ModEntities.STRAY_CAT.get(), 4, 1, 1));
+        }
         List<MobSpawnInfo.Spawners> wolves = new ArrayList<>();
         for (MobSpawnInfo.Spawners entry : creatures) {
             if (entry.type == EntityType.WOLF) {
@@ -147,7 +168,7 @@ public class CommonEvents {
         }
     }
 
-    /** /moonclaws version (everyone) and /moonclaws settlement (cheats): the demo cat settlement. */
+    /** /moonclaws version (everyone), /moonclaws test and /moonclaws settlement (cheats). */
     @SubscribeEvent
     public void onRegisterCommands(RegisterCommandsEvent event) {
         event.getDispatcher().register(Commands.literal("moonclaws")
@@ -157,14 +178,54 @@ public class CommonEvents {
                     ctx.getSource().sendSuccess(new StringTextComponent("Moonclaws " + version), false);
                     return 1;
                 }))
+                .then(Commands.literal("test").requires(source -> source.hasPermission(2))
+                        .executes(ctx -> SelfTest.run(ctx.getSource())))
                 .then(Commands.literal("settlement").requires(source -> source.hasPermission(2)).executes(ctx -> {
                     ServerPlayerEntity player = ctx.getSource().getPlayerOrException();
                     net.minecraft.util.math.BlockPos ground = player.blockPosition().below();
-                    SettlementBuilder.build(player.getLevel(), ground);
-                    SettlementData.get(player.getLevel()).add(ground);
+                    java.util.Random rnd = new java.util.Random();
+                    SettlementBuilder.clearTrees(player.getLevel(), ground.getX(), ground.getZ(), ground.getY(), 17);
+                    SettlementBuilder.Layout layout = SettlementBuilder.build(player.getLevel(), ground);
+                    SettlementData.Settlement s = SettlementSpawner.populate(player.getLevel(), layout,
+                            rnd.nextInt(SettlementSpawner.CLAN_NAMES), rnd);
                     // move the player to the entrance path (south side)
                     player.teleportTo(ground.getX() + 0.5D, ground.getY() + 1.0D, ground.getZ() + 12.5D);
-                    ctx.getSource().sendSuccess(new StringTextComponent("Moonclaws: settlement built. You are at the entrance (south side)."), true);
+                    ctx.getSource().sendSuccess(new TranslationTextComponent("message.moonclaws.settlement_built",
+                            new TranslationTextComponent("clan.moonclaws." + s.clan), s.leaderName), true);
+                    return 1;
+                }))
+                .then(Commands.literal("council").requires(source -> source.hasPermission(2)).executes(ctx -> {
+                    ServerPlayerEntity player = ctx.getSource().getPlayerOrException();
+                    net.minecraft.util.math.BlockPos ground = player.blockPosition().below();
+                    int wood = ClanWorldgen.woodFor(player.getLevel(), player.getLevel().getBiome(ground));
+                    CouncilBuilder.build(player.getLevel(), ground, wood < 0 ? CouncilBuilder.WOOD_OAK : wood);
+                    SettlementData.get(player.getLevel()).addCouncil(ground);
+                    // demo: four platforms, as if four settlements were around
+                    for (int i = 0; i < 4; i++) {
+                        double a = Math.PI / 4 + i * Math.PI / 2 + 0.3D;
+                        CouncilBuilder.addPlatform(player.getLevel(), ground,
+                                ground.getX() + (int) (Math.cos(a) * 96), ground.getZ() + (int) (Math.sin(a) * 96));
+                    }
+                    player.teleportTo(ground.getX() + 0.5D, ground.getY() + 1.0D, ground.getZ() + 16.5D);
+                    ctx.getSource().sendSuccess(new TranslationTextComponent("message.moonclaws.council_built"), true);
+                    return 1;
+                }))
+                .then(Commands.literal("nearest").requires(source -> source.hasPermission(2)).executes(ctx -> {
+                    ServerPlayerEntity player = ctx.getSource().getPlayerOrException();
+                    java.util.List<SettlementData.Group> groups = ClanWorldgen.nearestGroups(player.getLevel(), player.blockPosition());
+                    if (groups.isEmpty()) {
+                        ctx.getSource().sendFailure(new TranslationTextComponent("message.moonclaws.nearest_none"));
+                        return 0;
+                    }
+                    SettlementData.Group g = groups.get(0);
+                    ctx.getSource().sendSuccess(new TranslationTextComponent("message.moonclaws.nearest_council",
+                            g.council.getX(), g.council.getZ(),
+                            (int) Math.sqrt(g.council.distSqr(player.blockPosition()))), false);
+                    for (int i = 0; i < g.sites.size(); i++) {
+                        net.minecraft.util.math.BlockPos site = g.sites.get(i);
+                        ctx.getSource().sendSuccess(new TranslationTextComponent("message.moonclaws.nearest_site",
+                                new TranslationTextComponent("clan.moonclaws." + g.clans.get(i)), site.getX(), site.getZ()), false);
+                    }
                     return 1;
                 })));
     }
@@ -220,17 +281,68 @@ public class CommonEvents {
         }
     }
 
-    /** Right click on a stray cat with an empty hand opens the trade window. */
+    // ------------------------------------------------------------ neutrality of hostile mobs to cats
+
+    private static final String K_PROVOKER = "moonclaws_provoker";
+    private static final String K_PROVOKED_AT = "moonclaws_provoked_at";
+    /** A provoked mob stays angry for 30 seconds after the last hit. */
+    private static final long ANGRY_TICKS = 600L;
+    private static final long KIT_ANGRY_TICKS = 200L;
+
+    private static boolean isBoss(MobEntity mob) {
+        return mob instanceof WitherEntity || mob instanceof EnderDragonEntity || mob instanceof ElderGuardianEntity;
+    }
+
+    private static boolean isProvokedBy(MobEntity mob, PlayerEntity player) {
+        CompoundNBT d = mob.getPersistentData();
+        if (!d.hasUUID(K_PROVOKER) || !d.getUUID(K_PROVOKER).equals(player.getUUID())) {
+            return false;
+        }
+        // kits are forgiven sooner: 10 seconds instead of 30
+        long angry = CatState.getRank(player) == CatState.RANK_KIT ? KIT_ANGRY_TICKS : ANGRY_TICKS;
+        return mob.level.getGameTime() - d.getLong(K_PROVOKED_AT) <= angry;
+    }
+
+    /** Should this mob leave this player alone? */
+    private static boolean leavesAlone(MobEntity mob, PlayerEntity player) {
+        return mob instanceof IMob && !isBoss(mob) && CatState.isCat(player) && !isProvokedBy(mob, player);
+    }
+
+    /** Hostile mobs don't pick a cat-player as a target (unless the cat hit them first). */
     @SubscribeEvent
-    public void onInteractEntity(PlayerInteractEvent.EntityInteract event) {
-        if (event.getWorld().isClientSide || event.getHand() != Hand.MAIN_HAND || !event.getItemStack().isEmpty()) {
+    public void onSetTarget(LivingSetAttackTargetEvent event) {
+        if (event.getEntityLiving().level.isClientSide) {
             return;
         }
-        if (event.getTarget() instanceof StrayCatEntity && event.getPlayer() instanceof ServerPlayerEntity) {
-            ServerPlayerEntity sp = (ServerPlayerEntity) event.getPlayer();
-            ModNetwork.CHANNEL.send(PacketDistributor.PLAYER.with(() -> sp), new ModNetwork.OpenTradePacket());
-            event.setCanceled(true);
-            event.setCancellationResult(ActionResultType.SUCCESS);
+        if (!(event.getTarget() instanceof PlayerEntity) || !(event.getEntityLiving() instanceof MobEntity)) {
+            return;
+        }
+        MobEntity mob = (MobEntity) event.getEntityLiving();
+        if (leavesAlone(mob, (PlayerEntity) event.getTarget())) {
+            mob.setTarget(null);
+        }
+    }
+
+    /** Remember who hit a mob: that player is fair game for 30 seconds. */
+    @SubscribeEvent
+    public void onHurt(LivingHurtEvent event) {
+        if (event.getEntityLiving().level.isClientSide || !(event.getEntityLiving() instanceof MobEntity)) {
+            return;
+        }
+        Entity attacker = event.getSource().getEntity();
+        if (attacker instanceof PlayerEntity) {
+            CompoundNBT d = event.getEntityLiving().getPersistentData();
+            d.putUUID(K_PROVOKER, attacker.getUUID());
+            d.putLong(K_PROVOKED_AT, event.getEntityLiving().level.getGameTime());
+        }
+    }
+
+    /** Mobs that were already chasing the player calm down (on transformation, or 30 s after the last hit). */
+    private static void calmNearbyMobs(ServerPlayerEntity player) {
+        for (MobEntity mob : player.level.getEntitiesOfClass(MobEntity.class, player.getBoundingBox().inflate(24.0D))) {
+            if (mob.getTarget() == player && leavesAlone(mob, player)) {
+                mob.setTarget(null);
+            }
         }
     }
 
@@ -253,7 +365,11 @@ public class CommonEvents {
             return;
         }
         Pose pose = event.getPose();
-        if (pose == Pose.STANDING) {
+        if (pose == Pose.STANDING && CatState.getRank((PlayerEntity) entity) == CatState.RANK_KIT) {
+            // a kit is tiny: always half a block tall
+            event.setNewSize(EntitySize.scalable(0.5F, 0.5F));
+            event.setNewEyeHeight(0.4F);
+        } else if (pose == Pose.STANDING) {
             event.setNewSize(EntitySize.scalable(0.6F, 0.7F));
             event.setNewEyeHeight(0.55F);
         } else if (pose == Pose.CROUCHING) {
